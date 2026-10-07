@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title id="pageTitle"></title>
+<script>
+// Restore the preference before the first paint without touching study data.
+const THEME_KEY = "cpp-study-theme-v1";
+try {
+ document.documentElement.dataset.theme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+} catch (error) {
+ document.documentElement.dataset.theme = "light";
+}
+</script>
+<style>
+:root{color-scheme:light;--blue:#2563eb;--green:#16a34a;--ink:#172033;--muted:#64748b;--line:#e2e8f0;--bg:#f6f8fc;--surface:#fff;--control-border:#cbd5e1;--track:#e5e7eb;--primary:#2563eb;--on-primary:#fff;--accent:#1d4ed8;--tab-bg:#e7efff;--tab-border:#bfdbfe;--danger:#b91c1c;--success:#166534;--secondary:#334155;--done-bg:#ecfdf5;--done-border:#bbf7d0;--bar:#3b82f6;--shadow:0 4px 18px #1e293b0b}
+:root[data-theme="dark"]{color-scheme:dark;--blue:#8ab4f8;--green:#66dc91;--ink:#f5f5f5;--muted:#b8b8b8;--line:#484848;--bg:#111111;--surface:#262626;--control-border:#686868;--track:#414141;--accent:#ededed;--tab-bg:#363636;--tab-border:#858585;--danger:#ff9999;--success:#7be09e;--secondary:#dedede;--done-bg:#262626;--done-border:#484848;--bar:#76a9fa;--shadow:0 3px 10px #00000030}
+:root{--study-label:#1d4ed8;--review-bar:#ef4444;--review-label:#b91c1c}
+:root[data-theme="dark"]{--study-label:#8ab4f8;--review-bar:#f87171;--review-label:#fca5a5}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{height:100%;overflow:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+main{max-width:1180px;height:100vh;height:100dvh;min-height:0;display:flex;flex-direction:column;margin:0 auto;padding:18px 18px 0}
+.dashboard{flex:0 0 auto;min-width:0;background:var(--bg);border-bottom:1px solid var(--line);padding-bottom:6px}
+h1{margin:0 0 5px;font-size:25px;letter-spacing:.2px}.sub{color:var(--muted);font-size:12px}.sub a,a{color:var(--blue)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
+.label{color:var(--muted);font-size:12px}.value{font-size:25px;font-weight:750;margin-top:2px;font-variant-numeric:tabular-nums}
+#vHours,#previewHours{font-size:clamp(16px,1.65vw,21px)}
+.progress{height:9px;border-radius:99px;background:var(--track);overflow:hidden;margin:8px 0 12px}
+.progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),#22c55e);transition:width .2s}
+button,input,select{font:inherit;color:inherit}button,input:not([type=checkbox]),select{height:37px;max-width:100%;min-width:0;border:1px solid var(--control-border);border-radius:8px;background:var(--surface);padding:0 10px}
+input::placeholder{color:var(--muted);opacity:1}
+button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}button.danger{color:var(--danger)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.view-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 10px}.theme-toggle{flex:0 0 auto;white-space:nowrap}
+.tabs{display:flex;gap:7px;margin:0}.tabs button{border-color:transparent;background:transparent;color:var(--muted);font-weight:600}.tabs button[aria-selected=true]{background:var(--tab-bg);color:var(--accent);border-color:var(--tab-border)}
+.entry-form{display:grid;grid-template-columns:180px minmax(0,1fr) auto auto;gap:9px;align-items:end}.field{display:flex;min-width:0;flex-direction:column;gap:3px}.field>span{font-size:12px;color:var(--muted)}.field input{width:100%}
+.note{color:var(--muted);font-size:12px;margin:6px 0 3px}.preview{min-height:18px;font-size:12px;color:var(--accent);margin-top:5px}.preview.error{color:var(--danger)}
+.message{font-size:12px;margin-top:5px;color:var(--success)}.message.error{color:var(--danger)}
+.day-filter{display:flex;align-items:center;flex-wrap:wrap;gap:3px 12px;margin-top:6px;padding-top:5px;border-top:1px solid var(--line)}
+.day-filter-toggle{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;height:27px;padding:0;border:0;background:transparent;font-size:12px}.day-filter .note{margin:0}.day-filter .note.error{color:var(--danger)}
+.switch-track{display:block;position:relative;width:32px;height:18px;border:1px solid var(--control-border);border-radius:99px;background:var(--track)}.switch-track::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--on-primary)}
+.day-filter-toggle[aria-checked=true] .switch-track{background:var(--primary);border-color:var(--primary)}.day-filter-toggle[aria-checked=true] .switch-track::after{transform:translateX(14px)}
+#showReview[aria-checked=true] .switch-track{background:var(--review-bar);border-color:var(--review-bar)}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.toolbar input{flex:1 1 180px}.position{font-weight:600;color:var(--secondary)}
+.toolbar button:disabled{opacity:.5;cursor:not-allowed}
+.panel{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:12px 8px 24px 0;scrollbar-gutter:stable;overscroll-behavior:contain;scroll-padding:12px}
+.panel:focus-visible{outline-offset:-2px}.list{display:grid;align-content:start;gap:8px}
+.daily-summary{margin:0 0 10px;color:var(--muted);font-size:13px}.daily-records{display:grid;gap:9px}
+.chart-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 14px 10px;margin-bottom:14px;min-width:0}
+.chart-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.chart-heading h2{font-size:16px;margin:0}.chart-heading span,.chart-note{font-size:11px;color:var(--muted)}.chart-note{margin:4px 0 8px}.chart-note:last-child{margin:6px 0 0}
+.chart-legend{display:flex;gap:7px 18px;flex-wrap:wrap;margin:7px 0;font-size:12px}.chart-legend>span{display:inline-flex;align-items:center;gap:6px}.legend-swatch{width:10px;height:10px;border-radius:2px;background:var(--bar)}.legend-swatch.review{background:var(--review-bar)}
+.chart-scroll{overflow:hidden;min-width:0;min-height:240px}.chart-scroll svg{display:block;max-width:100%}.chart-scroll .empty{border:0;min-height:240px;display:grid;place-items:center;padding:35px 14px}
+.chart-hit{fill:transparent;pointer-events:all;cursor:crosshair}.chart-day:hover .chart-hit,.chart-day:focus-within .chart-hit{fill:var(--track);opacity:.35}.chart-detail{min-height:18px;color:var(--ink)}
+.chart-axis{fill:var(--muted);font-size:11px}.chart-grid{stroke:var(--line);stroke-width:1}.chart-value,.review-value{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}.chart-value{fill:var(--study-label)}.review-value{fill:var(--review-label)}
+.chart-value,.review-value{paint-order:stroke;stroke:var(--surface);stroke-width:2.5px;stroke-linejoin:round}
+.study-bar,.study-bar-exit{fill:var(--bar);rx:2}.review-bar,.review-bar-exit{fill:var(--review-bar);rx:2}.study-bar-exit,.review-bar-exit{pointer-events:none}.study-bar:hover,.study-bar:focus,.review-bar:hover,.review-bar:focus{outline:none;stroke:var(--ink);stroke-width:2}
+@media(prefers-reduced-motion:reduce){.progress>i{transition:none}}
+.records-title{font-size:15px;margin:4px 0 9px}
+.daily-record{display:grid;grid-template-columns:112px minmax(0,1fr) 64px 100px 112px;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:13px 14px}
+.daily-record time{font-weight:700}.record-episodes{min-width:0;overflow-wrap:anywhere}.record-count,.record-minutes{font-variant-numeric:tabular-nums}.record-actions{display:flex;gap:6px}.record-actions button{height:31px;padding:0 8px;font-size:12px}.record-caption{font-size:11px;color:var(--muted)}
+.daily-record.unrecorded{border-style:dashed;color:var(--muted)}.chart-day-labels.unrecorded .chart-value{fill:var(--muted)}
+.row{display:grid;grid-template-columns:24px 38px minmax(160px,1fr) 205px 82px 87px;gap:9px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 12px;cursor:pointer}
+.row.done{background:var(--done-bg);border-color:var(--done-border)}.row.current{border-color:var(--green);box-shadow:inset 3px 0 var(--green)}
+.row .title{height:auto;max-width:100%;min-width:0;text-align:left;font-weight:600;padding:0;background:none;border:0;border-radius:2px}.row .title:hover{color:var(--blue)}
+.row .stage{color:var(--muted);font-size:12px}.row .duration{font-variant-numeric:tabular-nums;color:var(--secondary);font-size:12px}.row .open{text-decoration:none;white-space:nowrap;font-size:12px}
+.check{width:19px;height:19px;margin:0;accent-color:var(--green);cursor:pointer}.empty{text-align:center;padding:30px 18px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:12px}.empty strong{display:block;color:var(--ink);font-size:16px;margin-bottom:5px}
+/* Neutral surfaces separate regions; color is reserved for actions and progress. */
+:root[data-theme="dark"] input:not([type=checkbox]),:root[data-theme="dark"] select{background:#181818}
+:root[data-theme="dark"] .progress>i{background:var(--green)}
+:root[data-theme="dark"] #vPct,:root[data-theme="dark"] #previewPct{color:var(--green)}
+:root[data-theme="dark"] .row.done{box-shadow:inset 3px 0 var(--green)}
+:root[data-theme="dark"] .row.current,:root[data-theme="dark"] .row:hover{background:#333333}
+@media(max-width:900px){.row{grid-template-columns:24px 34px minmax(0,1fr) 80px}.row .stage{grid-column:3;grid-row:2}.row .open{grid-column:4;grid-row:2}.row .duration{grid-column:4;grid-row:1}.daily-record{grid-template-columns:104px minmax(0,1fr) 62px 90px}.record-actions{grid-column:2/-1;justify-content:flex-end}.entry-form{grid-template-columns:160px minmax(0,1fr) auto auto}.card{padding:10px}.value{font-size:22px}}
+@media(max-width:600px){main{padding:12px 12px 0}h1{font-size:19px;line-height:1.35}.sub{font-size:11px}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:10px 0 8px}.card{padding:8px}.label{font-size:11px}.value{font-size:20px}.progress{margin:7px 0 9px}.view-toolbar{margin-bottom:8px}.tabs button,.theme-toggle{height:34px;padding:0 8px;font-size:12px}.entry-form{grid-template-columns:140px minmax(0,1fr);gap:6px}.entry-form>button{width:100%}.field>span{font-size:11px}.entry-form input,.entry-form button,.toolbar input,.toolbar select,.toolbar button{height:33px;font-size:12px;padding:0 7px}.note{font-size:11px}.preview,.message{font-size:11px}.toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.toolbar input{grid-column:1/-1}.toolbar #clearPosition{grid-column:1/-1}.toolbar>*{width:100%}.row{grid-template-columns:22px 29px minmax(0,1fr) 78px;gap:6px;padding:9px 8px}.row .title{overflow-wrap:anywhere;font-size:13px}.panel{padding-right:4px}.daily-record{grid-template-columns:1fr auto;gap:7px 10px;padding:11px}.record-episodes{grid-column:1/-1;grid-row:2}.record-count{grid-column:1;grid-row:3}.record-minutes{grid-column:2;grid-row:3;text-align:right}.record-actions{grid-column:2;grid-row:1}.daily-summary{font-size:12px}}
+@media(max-height:650px){main{padding-top:7px}h1{font-size:17px;line-height:1.3}.sub{font-size:11px}.stats{gap:6px;margin:7px 0}.card{padding:5px 8px}.label{font-size:10px}.value{font-size:18px}#vHours,#previewHours{font-size:15px}.progress{height:6px;margin:5px 0 7px}.view-toolbar{margin-bottom:6px}.tabs button,.theme-toggle{height:28px;font-size:12px}.entry-form input,.entry-form button,.toolbar input,.toolbar select,.toolbar button{height:29px;font-size:12px}.field>span{font-size:10px}.entry-form{gap:6px}.note,.preview,.message{font-size:10px;margin-top:3px}.dashboard{padding-bottom:3px}}
+@media(max-height:650px) and (min-width:601px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.entry-form{grid-template-columns:145px minmax(0,1fr) auto auto}}
+@media(max-width:600px){.toolbar #clearPosition{grid-column:auto}}
+</style>
+</head>
+<body><main>
+<header class="dashboard">
+<h1 id="heading"></h1><div class="sub" id="subtitle"></div>
+<div class="view-toolbar">
+<div class="tabs" role="tablist" aria-label="统计与预览功能切换">
+ <button id="dailyTab" type="button" role="tab" aria-selected="true" aria-controls="dailyPanel">学习统计</button>
+ <button id="browseTab" type="button" role="tab" aria-selected="false" aria-controls="list" tabindex="-1">分集预览</button>
+</div>
+<button id="themeToggle" class="theme-toggle" type="button" aria-label="切换到深色主题">切换深色</button>
+</div>
+<div class="message error" id="themeNotice" role="status" hidden></div>
+<div id="dailyHeader">
+<section class="stats" aria-label="手动记录统计">
+ <div class="card"><div class="label">已学集数 / 总集数</div><div class="value" id="vDone"></div></div>
+ <div class="card"><div class="label">完成比例（按时长）</div><div class="value" id="vPct"></div></div>
+ <div class="card"><div class="label">已学分钟 / 总分钟</div><div class="value" id="vHours"></div></div>
+ <div class="card"><div class="label">剩余集数</div><div class="value" id="vLeft"></div></div>
+</section>
+<div class="progress" role="progressbar" aria-label="手动记录的课程完成比例" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i id="progressFill"></i></div>
+<div id="dailyControls">
+ <form class="entry-form" id="recordForm" novalidate>
+  <label class="field"><span>学习日期</span><input id="recordDate" type="date" required></label>
+  <label class="field"><span>学习分集（P1～P314）</span><input id="recordEpisodes" type="text" required autocomplete="off" placeholder="例如 1-10, 15" aria-describedby="entryPreview"></label>
+  <button class="primary" id="saveRecord" type="submit">保存当天记录</button>
+  <button id="clearForm" type="button">清空输入</button>
+ </form>
+ <div class="preview" id="entryPreview" aria-live="polite" hidden></div>
+ <div class="day-filter">
+  <button id="hideIdleDays" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="过滤未学习日期" aria-controls="dailyChart dailyRecords" aria-describedby="dayFilterHint"><span class="switch-track" aria-hidden="true"></span><span>过滤未学习日期</span></button>
+  <button id="showReview" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="显示跨天复习" aria-controls="dailyChart" aria-describedby="reviewDisplayHint"><span class="switch-track" aria-hidden="true"></span><span>显示跨天复习</span></button>
+  <span class="note" id="dayFilterHint" hidden></span>
+ </div>
+</div>
+<div class="message" id="message" role="status" aria-live="polite" hidden></div>
+</div>
+<div id="browseControls" hidden>
+ <section class="stats" id="previewStats" aria-label="学习量预览，不计入统计">
+  <div class="card"><div class="label">累计集数 / 总集数</div><div class="value" id="previewDone"></div></div>
+  <div class="card"><div class="label">完成比例（按时长）</div><div class="value" id="previewPct"></div></div>
+  <div class="card"><div class="label">累计分钟 / 总分钟</div><div class="value" id="previewHours"></div></div>
+  <div class="card"><div class="label">剩余集数</div><div class="value" id="previewLeft"></div></div>
+ </section>
+ <div class="progress" role="progressbar" aria-label="假设学完所选分集的课程完成比例预览" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="previewProgressBar"><i id="previewProgressFill"></i></div>
+ <div class="toolbar">
+  <input id="search" type="search" placeholder="搜索标题或分集编号" aria-label="搜索标题或分集编号">
+  <select id="stage" aria-label="筛选阶段"></select>
+  <select id="status" aria-label="筛选勾选状态"><option value="">全部勾选状态</option><option value="0">未勾选</option><option value="1">已勾选</option></select>
+  <button id="jumpToPosition" type="button" aria-controls="list" disabled>跳转到当前进度</button>
+  <button id="clearPosition" type="button">清空勾选位置</button>
+ </div>
+ <div class="note"><span class="position" id="positionLabel"></span> · 点选分集，预览从第 1 集学到此处的累计量；不计入统计。</div>
+ <div class="message" id="browseMessage" role="status" aria-live="polite" hidden></div>
+</div>
+</header>
+<section class="panel" id="dailyPanel" tabindex="0" role="tabpanel" aria-labelledby="dailyTab">
+ <p class="daily-summary" id="dailySummary"></p>
+ <section class="chart-card" aria-labelledby="chartTitle">
+  <div class="chart-heading"><h2 id="chartTitle">每日学习量</h2><span>单位：分钟</span></div>
+  <div class="chart-legend" aria-label="柱状图图例"><span><i class="legend-swatch" aria-hidden="true"></i>首次学习</span><span><i class="legend-swatch review" aria-hidden="true"></i><span id="reviewLegend">跨天复习</span></span></div>
+  <p class="chart-note" id="reviewDisplayHint"></p>
+  <div class="chart-scroll" id="dailyChart" tabindex="0" role="region" aria-label="每日学习分钟柱状图"></div>
+  <p class="chart-note chart-detail" id="chartDetail" aria-live="polite">悬停或点击柱子查看详情。</p>
+ </section>
+ <h2 class="records-title">每日记录</h2><div class="daily-records" id="dailyRecords"></div>
+</section>
+<section class="panel list" id="list" tabindex="0" role="tabpanel" aria-labelledby="browseTab" hidden></section>
+</main>
+<script>
+const BASE=[{"title":"01 \u8bfe\u7a0b\u5b89\u6392","duration":"03:35","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"02 \u7b2c\u4e00\u4e2aC\u7a0b\u5e8f-C\u4e66\u5199HelloWorld","duration":"09:26","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"03 \u7a0b\u5e8f\u7684\u6ce8\u91ca-\u5355\u884c\u6ce8\u91ca\u548c\u591a\u884c\u6ce8\u91ca","duration":"06:08","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"04 \u53d8\u91cf-\u53d8\u91cf\u7684\u4f7f\u7528-\u53d8\u91cf\u7684\u610f\u4e49","duration":"05:18","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"05 \u5e38\u91cf-\u5e38\u91cf\u4e0e\u53d8\u91cf\u7684\u533a\u522b-\u5e38\u91cf\u7684\u4f7f\u7528","duration":"07:58","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"06 \u5173\u952e\u5b57-C++\u5e38\u7528\u7684\u7f16\u7a0b\u5173\u952e\u5b57","duration":"03:44","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"07 \u6807\u8bc6\u7b26\u547d\u540d\u89c4\u5219","duration":"09:01","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"08 \u6570\u636e\u7c7b\u578b-\u6574\u578b","duration":"11:12","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"09 \u6570\u636e\u7c7b\u578b-sizeof\u5173\u952e\u5b57","duration":"06:55","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"10 \u6570\u636e\u7c7b\u578b-\u5b9e\u578b","duration":"12:00","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"11 \u6570\u636e\u7c7b\u578b-\u5b57\u7b26\u578b","duration":"10:34","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"12 \u6570\u636e\u7c7b\u578b-\u8f6c\u4e49\u5b57\u7b26","duration":"07:29","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"13 \u6570\u636e\u7c7b\u578b-\u5b57\u7b26\u4e32\u7c7b\u578b","duration":"07:36","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"14 \u6570\u636e\u7c7b\u578b-\u5e03\u5c14\u7c7b\u578b","duration":"04:07","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"15 \u6570\u636e\u7c7b\u578b-\u6570\u636e\u7684\u8f93\u5165","duration":"10:43","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"16 \u8fd0\u7b97\u7b26-\u7b97\u672f\u8fd0\u7b97\u7b26-\u52a0\u51cf\u4e58\u9664\u8fd0\u7b97","duration":"10:57","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"17 \u8fd0\u7b97\u7b26-\u7b97\u672f\u8fd0\u7b97\u7b26-\u53d6\u6a21\u8fd0\u7b97","duration":"07:38","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"18 \u8fd0\u7b97\u7b26-\u7b97\u672f\u8fd0\u7b97\u7b26-\u9012\u589e\u9012\u51cf","duration":"07:15","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"19 \u8fd0\u7b97\u7b26-\u8d4b\u503c\u8fd0\u7b97\u7b26","duration":"06:14","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"20 \u8fd0\u7b97\u7b26-\u6bd4\u8f83\u8fd0\u7b97\u7b26","duration":"05:49","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"21 \u8fd0\u7b97\u7b26-\u903b\u8f91\u8fd0\u7b97\u7b26-\u975e","duration":"04:27","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"22 \u8fd0\u7b97\u7b26-\u903b\u8f91\u8fd0\u7b97\u7b26-\u4e0e","duration":"04:43","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"23 \u8fd0\u7b97\u7b26-\u903b\u8f91\u8fd0\u7b97\u7b26-\u6216","duration":"04:58","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"24 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784-\u5355\u884cif\u8bed\u53e5","duration":"10:42","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"25 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784-\u591a\u884cif\u8bed\u53e5","duration":"07:29","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"26 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784-\u591a\u6761\u4ef6if\u8bed\u53e5","duration":"11:40","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"27 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784-\u5d4c\u5957if\u8bed\u53e5","duration":"10:03","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"28 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784\u6848\u4f8b-\u4e09\u53ea\u5c0f\u732a\u79f0\u4f53\u91cd","duration":"10:26","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"29 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784\u6848\u4f8b-\u4e09\u76ee\u8fd0\u7b97\u7b26","duration":"06:32","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"30 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u9009\u62e9\u7ed3\u6784-switch\u8bed\u53e5","duration":"16:03","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"31 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784-while\u8bed\u53e5","duration":"09:24","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"32 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784\u6848\u4f8b-\u731c\u6570\u5b57","duration":"13:53","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"33 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784-dowhile\u8bed\u53e5","duration":"06:47","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"34 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784\u6848\u4f8b-\u6c34\u4ed9\u82b1\u6570","duration":"12:35","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"35 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784-for\u5faa\u73af","duration":"07:18","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"36 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5faa\u73af\u7ed3\u6784\u6848\u4f8b-\u6572\u684c\u5b50","duration":"11:25","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"37 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5d4c\u5957\u5faa\u73af","duration":"07:45","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"38 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u5d4c\u5957\u5faa\u73af\u6848\u4f8b-\u4e58\u6cd5\u53e3\u8bc0\u8868","duration":"09:38","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"39 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u8df3\u8f6c\u8bed\u53e5-break\u8bed\u53e5","duration":"12:21","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"40 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u8df3\u8f6c\u8bed\u53e5-continue","duration":"08:39","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"41 \u7a0b\u5e8f\u6d41\u7a0b\u7ed3\u6784-\u8df3\u8f6c\u8bed\u53e5-goto","duration":"05:24","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"42 \u6570\u7ec4-\u4e00\u7ef4\u6570\u7ec4\u5b9a\u4e49\u65b9\u5f0f","duration":"18:14","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"43 \u6570\u7ec4-\u4e00\u7ef4\u6570\u7ec4-\u6570\u7ec4\u540d","duration":"14:27","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"44 \u6570\u7ec4-\u4e00\u7ef4\u6570\u7ec4\u6848\u4f8b-\u4e94\u53ea\u5c0f\u732a\u79f0\u4f53\u91cd","duration":"09:04","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"45 \u6570\u7ec4-\u4e00\u7ef4\u6570\u7ec4\u6848\u4f8b-\u5143\u7d20\u9006\u7f6e","duration":"14:01","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"46 \u6570\u7ec4-\u4e00\u7ef4\u6570\u7ec4-\u5192\u6ce1\u6392\u5e8f","duration":"18:58","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"47 \u6570\u7ec4-\u4e8c\u7ef4\u6570\u7ec4\u5b9a\u4e49\u65b9\u5f0f","duration":"14:31","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"48 \u6570\u7ec4-\u4e8c\u7ef4\u6570\u7ec4-\u6570\u7ec4\u540d","duration":"14:08","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"49 \u6570\u7ec4-\u4e8c\u7ef4\u6570\u7ec4\u6848\u4f8b-\u8003\u8bd5\u6210\u7ee9\u7edf\u8ba1","duration":"10:21","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"50 \u51fd\u6570-\u51fd\u6570\u7684\u5b9a\u4e49","duration":"11:21","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"51 \u51fd\u6570-\u51fd\u6570\u7684\u8c03\u7528","duration":"07:45","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"52 \u51fd\u6570-\u503c\u4f20\u9012","duration":"11:55","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"53 \u51fd\u6570-\u5e38\u89c1\u7684\u6837\u5f0f","duration":"08:58","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"54 \u51fd\u6570-\u51fd\u6570\u7684\u58f0\u660e","duration":"08:25","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"55 \u51fd\u6570-\u51fd\u6570\u7684\u5206\u6587\u4ef6\u7f16\u5199","duration":"09:50","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"56 \u6307\u9488-\u6307\u9488\u7684\u5b9a\u4e49\u548c\u4f7f\u7528","duration":"10:12","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"57 \u6307\u9488-\u6307\u9488\u6240\u5360\u5185\u5b58\u7a7a\u95f4","duration":"06:23","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"58 \u6307\u9488-\u7a7a\u6307\u9488","duration":"04:33","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"59 \u6307\u9488-\u91ce\u6307\u9488","duration":"03:17","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"60 \u6307\u9488-const\u4fee\u9970\u6307\u9488","duration":"15:06","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"61 \u6307\u9488-\u6307\u9488\u548c\u6570\u7ec4","duration":"07:28","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"62 \u6307\u9488-\u6307\u9488\u548c\u51fd\u6570","duration":"11:24","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"63 \u6307\u9488-\u6307\u9488\u914d\u5408\u6570\u7ec4\u548c\u51fd\u6570\u6848\u4f8b","duration":"08:38","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"64 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u5b9a\u4e49\u548c\u4f7f\u7528","duration":"14:28","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"65 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u6570\u7ec4","duration":"08:11","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"66 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u6307\u9488","duration":"06:29","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"67 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u5d4c\u5957\u7ed3\u6784\u4f53","duration":"09:29","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"68 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u505a\u51fd\u6570\u53c2\u6570","duration":"10:58","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"69 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u4e2dconst\u4f7f\u7528\u573a\u666f","duration":"11:18","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"70 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u6848\u4f8b1","duration":"20:37","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"71 \u7ed3\u6784\u4f53-\u7ed3\u6784\u4f53\u6848\u4f8b2","duration":"12:54","stage":"\u7b2c1\u9636\u6bb5\uff1aC++\u57fa\u7840\u5165\u95e8"},{"title":"01 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u7cfb\u7edf\u529f\u80fd\u4ecb\u7ecd\u53ca\u5c55\u793a","duration":"06:45","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"02 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u521b\u5efa\u9879\u76ee","duration":"02:50","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"03 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u83dc\u5355\u529f\u80fd","duration":"06:04","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"04 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u9000\u51fa\u529f\u80fd\u5b9e\u73b0","duration":"08:16","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"05 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u6dfb\u52a0\u8054\u7cfb\u4eba-\u7ed3\u6784\u4f53\u8bbe\u8ba1","duration":"08:48","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"06 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u6dfb\u52a0\u8054\u7cfb\u4eba-\u529f\u80fd\u5b9e\u73b0","duration":"17:48","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"07 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u663e\u793a\u8054\u7cfb\u4eba","duration":"10:27","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"08 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u5220\u9664\u8054\u7cfb\u4eba-\u68c0\u6d4b\u8054\u7cfb\u4eba\u662f\u5426\u5b58\u5728","duration":"09:50","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"09 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u5220\u9664\u8054\u7cfb\u4eba-\u529f\u80fd\u5b9e\u73b0","duration":"11:32","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"10 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u67e5\u627e\u8054\u7cfb\u4eba","duration":"08:37","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"11 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u4fee\u6539\u8054\u7cfb\u4eba","duration":"12:27","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"12 \u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf-\u6e05\u7a7a\u901a\u8baf\u5f55","duration":"06:15","stage":"\u7b2c2\u9636\u6bb5\uff1a\u901a\u8baf\u5f55\u7ba1\u7406\u7cfb\u7edf"},{"title":"01 \u7a0b\u5e8f\u7684\u5185\u5b58\u6a21\u578b-\u5185\u5b58\u56db\u533a-\u4ee3\u7801\u533a.","duration":"08:56","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"02 \u7a0b\u5e8f\u7684\u5185\u5b58\u6a21\u578b-\u5185\u5b58\u56db\u533a-\u5168\u5c40\u533a","duration":"17:09","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"03 \u7a0b\u5e8f\u7684\u5185\u5b58\u6a21\u578b-\u5185\u5b58\u56db\u533a-\u6808\u533a","duration":"08:15","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"04 \u7a0b\u5e8f\u7684\u5185\u5b58\u6a21\u578b-\u5185\u5b58\u56db\u533a-\u5806\u533a","duration":"07:46","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"05 \u7a0b\u5e8f\u7684\u5185\u5b58\u6a21\u578b-new\u8fd0\u7b97\u7b26","duration":"10:41","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"06 C++\u4e2d\u7684\u5f15\u7528-\u5f15\u7528\u7684\u57fa\u672c\u8bed\u6cd5","duration":"06:13","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"07 C++\u4e2d\u7684\u5f15\u7528-\u5f15\u7528\u7684\u6ce8\u610f\u4e8b\u9879","duration":"07:40","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"08 C++\u4e2d\u7684\u5f15\u7528-\u5f15\u7528\u505a\u51fd\u6570\u53c2\u6570","duration":"10:26","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"09 C++\u4e2d\u7684\u5f15\u7528-\u5f15\u7528\u505a\u51fd\u6570\u8fd4\u56de\u503c","duration":"10:48","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"10 C++\u4e2d\u7684\u5f15\u7528-\u5f15\u7528\u7684\u672c\u8d28","duration":"07:43","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"11 C++\u4e2d\u7684\u5f15\u7528-\u5e38\u91cf\u5f15\u7528","duration":"09:19","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"12 \u51fd\u6570\u9ad8\u7ea7-\u51fd\u6570\u7684\u9ed8\u8ba4\u53c2\u6570","duration":"13:17","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"13 \u51fd\u6570\u9ad8\u7ea7-\u51fd\u6570\u7684\u5360\u4f4d\u53c2\u6570","duration":"06:11","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"14 \u51fd\u6570\u9ad8\u7ea7-\u51fd\u6570\u91cd\u8f7d-\u57fa\u672c\u8bed\u6cd5","duration":"11:20","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"15 \u51fd\u6570\u9ad8\u7ea7-\u51fd\u6570\u91cd\u8f7d-\u6ce8\u610f\u4e8b\u9879","duration":"11:39","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"16 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-\u5c5e\u6027\u548c\u884c\u4e3a\u4f5c\u4e3a\u6574\u4f53","duration":"14:37","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"17 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-\u6848\u4f8b-\u8bbe\u8ba1\u5b66\u751f\u7c7b","duration":"10:29","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"18 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-\u8bbf\u95ee\u6743\u9650","duration":"10:56","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"19 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-c++\u4e2dclass\u548cstruct\u7684\u533a\u522b","duration":"05:42","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"20-\u6210\u5458\u5c5e\u6027\u8bbe\u7f6e\u4e3a\u79c1\u6709","duration":"15:52","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"21 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-\u8bbe\u8ba1\u6848\u4f8b1-\u7acb\u65b9\u4f53\u7c7b","duration":"21:48","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"22 \u7c7b\u548c\u5bf9\u8c61-\u5c01\u88c5-\u8bbe\u8ba1\u6848\u4f8b2-\u70b9\u548c\u5706\u5173\u7cfb","duration":"25:01","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"23 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u6784\u9020\u51fd\u6570\u548c\u6790\u6784\u51fd\u6570","duration":"15:57","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"24 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u51fd\u6570\u7684\u5206\u7c7b\u4ee5\u53ca\u8c03\u7528","duration":"25:49","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"25 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u62f7\u8d1d\u6784\u9020\u51fd\u6570\u8c03\u7528\u65f6\u673a","duration":"12:33","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"26 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u6784\u9020\u51fd\u6570\u8c03\u7528\u89c4\u5219","duration":"13:54","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"27 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u6df1\u62f7\u8d1d\u4e0e\u6d45\u62f7\u8d1d","duration":"16:44","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"28 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u521d\u59cb\u5316\u5217\u8868","duration":"07:23","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"29 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u7c7b\u5bf9\u8c61\u4f5c\u4e3a\u7c7b\u6210\u5458","duration":"13:24","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"30&31 \u7c7b\u548c\u5bf9\u8c61-\u9759\u6001\u6210\u5458","duration":"21:17","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"32 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u6210\u5458\u53d8\u91cf\u548c\u6210\u5458\u51fd\u6570\u5206\u5f00\u5b58\u50a8","duration":"10:39","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"33 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-this\u6307\u9488\u7684\u7528\u9014","duration":"15:38","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"34 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-\u7a7a\u6307\u9488\u8bbf\u95ee\u6210\u5458\u51fd\u6570","duration":"06:20","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"35 \u7c7b\u548c\u5bf9\u8c61-\u5bf9\u8c61\u7279\u6027-const\u4fee\u9970\u6210\u5458\u51fd\u6570","duration":"12:41","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"36 \u7c7b\u548c\u5bf9\u8c61-\u53cb\u5143-\u5168\u5c40\u51fd\u6570\u505a\u53cb\u5143","duration":"08:44","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"37 \u7c7b\u548c\u5bf9\u8c61-\u53cb\u5143-\u53cb\u5143\u7c7b","duration":"10:29","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"38 \u7c7b\u548c\u5bf9\u8c61-\u53cb\u5143-\u6210\u5458\u51fd\u6570\u505a\u53cb\u5143","duration":"10:13","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"39 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u52a0\u53f7\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"21:33","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"40 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u5de6\u79fb\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"15:36","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"41 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u9012\u589e\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"21:38","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"42 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u8d4b\u503c\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"17:17","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"43 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u5173\u7cfb\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"08:29","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"44 \u7c7b\u548c\u5bf9\u8c61-C++\u8fd0\u7b97\u7b26\u91cd\u8f7d-\u51fd\u6570\u8c03\u7528\u8fd0\u7b97\u7b26\u91cd\u8f7d","duration":"09:48","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"45 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u57fa\u672c\u8bed\u6cd5","duration":"17:54","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"46 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u7ee7\u627f\u65b9\u5f0f","duration":"16:28","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"47 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u7ee7\u627f\u4e2d\u7684\u5bf9\u8c61\u6a21\u578b","duration":"12:31","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"48 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u6784\u9020\u548c\u6790\u6784\u987a\u5e8f","duration":"04:59","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"49 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u540c\u540d\u6210\u5458\u5904\u7406","duration":"11:07","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"50 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u540c\u540d\u9759\u6001\u6210\u5458\u5904\u7406","duration":"13:01","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"51 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u7ee7\u627f\u8bed\u6cd5","duration":"08:55","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"52 \u7c7b\u548c\u5bf9\u8c61-\u7ee7\u627f-\u83f1\u5f62\u7ee7\u627f\u95ee\u9898\u4ee5\u53ca\u89e3\u51b3\u65b9\u6cd5","duration":"19:33","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"53 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u591a\u6001\u7684\u57fa\u672c\u8bed\u6cd5","duration":"17:00","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"54 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u591a\u6001\u7684\u539f\u7406\u5256\u6790","duration":"18:18","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"55 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u6848\u4f8b1-\u8ba1\u7b97\u5668\u7c7b","duration":"20:08","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"56 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u7eaf\u865a\u51fd\u6570\u548c\u62bd\u8c61\u7c7b","duration":"10:26","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"57 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u6848\u4f8b2-\u5236\u4f5c\u996e\u54c1","duration":"12:30","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"58 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u865a\u6790\u6784\u548c\u7eaf\u865a\u6790\u6784","duration":"17:05","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"59 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u6848\u4f8b3-\u7535\u8111\u7ec4\u88c5\u9700\u6c42\u5206\u6790","duration":"08:46","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"60 \u7c7b\u548c\u5bf9\u8c61-\u591a\u6001-\u6848\u4f8b3-\u7535\u8111\u7ec4\u88c5\u5177\u4f53\u5b9e\u73b0","duration":"19:01","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"61 C++\u6587\u4ef6\u64cd\u4f5c-\u6587\u672c\u6587\u4ef6-\u5199\u6587\u4ef6","duration":"16:08","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"62 C++\u6587\u4ef6\u64cd\u4f5c-\u6587\u672c\u6587\u4ef6-\u8bfb\u6587\u4ef6","duration":"13:34","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"63 C++\u6587\u4ef6\u64cd\u4f5c-\u4e8c\u8fdb\u5236\u6587\u4ef6-\u5199\u6587\u4ef6","duration":"07:45","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"64 C++\u6587\u4ef6\u64cd\u4f5c-\u4e8c\u8fdb\u5236\u6587\u4ef6-\u8bfb\u6587\u4ef6","duration":"06:30","stage":"\u7b2c3\u9636\u6bb5\uff1aC++\u6838\u5fc3\u7f16\u7a0b"},{"title":"01 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u9700\u6c42\u5206\u6790\u4ee5\u53ca\u6848\u4f8b\u5c55\u793a","duration":"11:17","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"02 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u521b\u5efa\u9879\u76ee","duration":"03:18","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"03 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u521b\u5efa\u804c\u5de5\u7ba1\u7406\u7c7b","duration":"05:43","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"04 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u83dc\u5355\u529f\u80fd\u5b9e\u73b0","duration":"05:27","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"05 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u9000\u51fa\u7cfb\u7edf\u529f\u80fd\u5b9e\u73b0","duration":"08:58","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"06 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u804c\u5de5\u62bd\u8c61\u7c7b\u548c\u666e\u901a\u5458\u5de5\u7c7b\u5b9e\u73b0","duration":"17:14","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"07 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u7ecf\u7406\u7c7b\u548c\u8001\u677f\u7c7b\u5b9e\u73b0","duration":"10:34","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"08 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6dfb\u52a0\u804c\u5de5\u529f\u80fd\u5b9e\u73b0","duration":"25:02","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"09 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6587\u4ef6\u4ea4\u4e92-\u5199\u6587\u4ef6","duration":"08:16","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"10 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6587\u4ef6\u4ea4\u4e92-\u8bfb\u6587\u4ef61-\u6587\u4ef6\u672a\u521b\u5efa","duration":"07:23","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"11 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6587\u4ef6\u4ea4\u4e92-\u8bfb\u6587\u4ef62-\u6587\u4ef6\u4e3a\u7a7a","duration":"06:37","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"12 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6587\u4ef6\u4ea4\u4e92-\u8bfb\u6587\u4ef63-\u7edf\u8ba1\u4eba\u6570","duration":"05:51","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"13 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6587\u4ef6\u4ea4\u4e92-\u8bfb\u6587\u4ef64-\u521d\u59cb\u5316\u5b8c\u6bd5","duration":"10:18","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"14 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u663e\u793a\u804c\u5de5\u529f\u80fd","duration":"08:19","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"15 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u5220\u9664\u804c\u5de5-\u5224\u65ad\u804c\u5de5\u662f\u5426\u5b58\u5728","duration":"06:55","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"16 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u5220\u9664\u804c\u5de5-\u529f\u80fd\u5b9e\u73b0","duration":"10:00","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"17 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u4fee\u6539\u804c\u5de5\u529f\u80fd\u5b9e\u73b0","duration":"13:12","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"18 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u67e5\u627e\u804c\u5de5\u529f\u80fd\u5b9e\u73b0","duration":"14:55","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"19 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6309\u7167\u804c\u5de5\u7f16\u53f7\u8fdb\u884c\u6392\u5e8f\u529f\u80fd\u5b9e\u73b0","duration":"14:08","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"20 \u804c\u5de5\u7ba1\u7406\u7cfb\u7edf-\u6e05\u7a7a\u6587\u4ef6\u5b9e\u73b0","duration":"07:52","stage":"\u7b2c4\u9636\u6bb5\uff1a\u4f01\u4e1a\u804c\u5de5\u7ba1\u7406\u7cfb\u7edf"},{"title":"01 \u6a21\u677f-\u6a21\u677f\u7684\u6982\u5ff5","duration":"04:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"02 \u6a21\u677f-\u51fd\u6570\u6a21\u677f\u57fa\u672c\u8bed\u6cd5","duration":"16:42","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"03 \u6a21\u677f-\u51fd\u6570\u6a21\u677f\u6ce8\u610f\u4e8b\u9879","duration":"09:46","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"04 \u6a21\u677f-\u51fd\u6570\u6a21\u677f\u6848\u4f8b-\u6570\u7ec4\u6392\u5e8f","duration":"12:14","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"05 \u6a21\u677f-\u666e\u901a\u51fd\u6570\u4e0e\u51fd\u6570\u6a21\u677f\u533a\u522b","duration":"09:20","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"06 \u6a21\u677f-\u666e\u901a\u51fd\u6570\u4e0e\u51fd\u6570\u6a21\u677f\u8c03\u7528\u89c4\u5219","duration":"12:00","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"07 \u6a21\u677f-\u6a21\u677f\u7684\u5c40\u9650\u6027","duration":"12:34","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"08 \u6a21\u677f-\u7c7b\u6a21\u677f\u57fa\u672c\u8bed\u6cd5","duration":"06:48","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"09 \u6a21\u677f-\u7c7b\u6a21\u677f\u4e0e\u51fd\u6570\u6a21\u677f\u533a\u522b","duration":"07:50","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"10 \u6a21\u677f-\u7c7b\u6a21\u677f\u4e2d\u6210\u5458\u51fd\u6570\u521b\u5efa\u65f6\u673a","duration":"08:01","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"11 \u6a21\u677f-\u7c7b\u6a21\u677f\u5bf9\u8c61\u505a\u51fd\u6570\u53c2\u6570","duration":"13:41","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"12 \u6a21\u677f-\u7c7b\u6a21\u677f\u4e0e\u7ee7\u627f","duration":"10:00","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"13 \u6a21\u677f-\u7c7b\u6a21\u677f\u6210\u5458\u51fd\u6570\u7c7b\u5916\u5b9e\u73b0","duration":"08:29","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"14 \u6a21\u677f-\u7c7b\u6a21\u677f\u5206\u6587\u4ef6\u7f16\u5199","duration":"13:19","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"15 \u6a21\u677f-\u7c7b\u6a21\u677f\u4e0e\u53cb\u5143","duration":"12:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"16 \u6a21\u677f-\u7c7b\u6a21\u677f\u6848\u4f8b-\u6570\u7ec4\u7c7b\u5c01\u88c5\u7684\u9700\u6c42\u5206\u6790","duration":"06:38","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"17 \u6a21\u677f-\u7c7b\u6a21\u677f\u6848\u4f8b-\u6570\u7ec4\u7c7b\u5c01\u88c5\uff08\u4e0a\uff09","duration":"18:06","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"18 \u6a21\u677f-\u7c7b\u6a21\u677f\u6848\u4f8b-\u6570\u7ec4\u7c7b\u5c01\u88c5\uff08\u4e0b\uff09","duration":"20:39","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"19 STL\u521d\u8bc6-STL\u7684\u57fa\u672c\u6982\u5ff5","duration":"17:44","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"20 STL\u521d\u8bc6-vector\u5b58\u653e\u5185\u7f6e\u6570\u636e\u7c7b\u578b","duration":"14:13","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"21 STL\u521d\u8bc6-vector\u5b58\u653e\u81ea\u5b9a\u4e49\u6570\u636e\u7c7b\u578b","duration":"10:38","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"22 STL\u521d\u8bc6-\u5bb9\u5668\u5d4c\u5957\u5bb9\u5668","duration":"07:25","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"23 string\u5bb9\u5668-\u6784\u9020\u51fd\u6570","duration":"06:49","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"24 string\u5bb9\u5668-\u8d4b\u503c\u64cd\u4f5c","duration":"07:16","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"25 string\u5bb9\u5668-\u5b57\u7b26\u4e32\u62fc\u63a5","duration":"11:05","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"26 string\u5bb9\u5668-\u5b57\u7b26\u4e32\u67e5\u627e\u548c\u66ff\u6362","duration":"10:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"27 string\u5bb9\u5668-\u5b57\u7b26\u4e32\u6bd4\u8f83","duration":"05:13","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"28 string\u5bb9\u5668-\u5b57\u7b26\u5b58\u53d6","duration":"05:33","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"29 string\u5bb9\u5668-\u5b57\u7b26\u4e32\u63d2\u5165\u548c\u5220\u9664","duration":"04:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"30 string\u5bb9\u5668-\u5b50\u4e32\u83b7\u53d6","duration":"07:21","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"31 vector\u5bb9\u5668-\u6784\u9020\u51fd\u6570","duration":"12:07","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"32 vector\u5bb9\u5668-\u8d4b\u503c\u64cd\u4f5c","duration":"05:49","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"33 vector\u5bb9\u5668-\u5bb9\u91cf\u548c\u5927\u5c0f","duration":"09:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"34 vector\u5bb9\u5668-\u63d2\u5165\u548c\u5220\u9664","duration":"08:31","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"35 vector\u5bb9\u5668-\u6570\u636e\u5b58\u53d6","duration":"04:49","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"36 vector\u5bb9\u5668-\u4e92\u6362\u5bb9\u5668","duration":"12:40","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"37 vector\u5bb9\u5668-\u9884\u7559\u7a7a\u95f4","duration":"06:55","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"38 deque\u5bb9\u5668-\u6784\u9020\u51fd\u6570","duration":"11:45","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"39 deque\u5bb9\u5668-\u8d4b\u503c\u64cd\u4f5c","duration":"04:31","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"40 deque\u5bb9\u5668-\u5927\u5c0f\u64cd\u4f5c","duration":"07:10","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"41 deque\u5bb9\u5668-\u63d2\u5165\u548c\u5220\u9664","duration":"13:08","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"42 deque\u5bb9\u5668-\u6570\u636e\u5b58\u53d6","duration":"04:26","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"43 deque\u5bb9\u5668-\u6392\u5e8f\u64cd\u4f5c","duration":"06:54","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"44 STL\u6848\u4f8b1-\u8bc4\u59d4\u6253\u5206","duration":"23:35","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"45 stack\u5bb9\u5668-\u57fa\u672c\u6982\u5ff5","duration":"07:09","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"46 stack\u5bb9\u5668-\u5e38\u7528\u63a5\u53e3","duration":"06:50","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"47 queue\u5bb9\u5668-\u57fa\u672c\u6982\u5ff5","duration":"06:42","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"48 queue\u5bb9\u5668-\u5e38\u7528\u63a5\u53e3","duration":"08:22","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"49 list\u5bb9\u5668-\u57fa\u672c\u6982\u5ff5","duration":"15:03","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"50 list\u5bb9\u5668-\u6784\u9020\u51fd\u6570","duration":"05:31","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"51 list\u5bb9\u5668-\u8d4b\u503c\u548c\u4ea4\u6362","duration":"06:47","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"52 list\u5bb9\u5668-\u5927\u5c0f\u64cd\u4f5c","duration":"05:25","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"53 list\u5bb9\u5668-\u63d2\u5165\u548c\u5220\u9664","duration":"11:45","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"54 list\u5bb9\u5668-\u6570\u636e\u5b58\u53d6","duration":"08:29","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"55 list\u5bb9\u5668-\u53cd\u8f6c\u548c\u6392\u5e8f","duration":"12:19","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"56 list\u5bb9\u5668-\u6392\u5e8f\u6848\u4f8b","duration":"12:40","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"57 set\u5bb9\u5668-\u6784\u9020\u548c\u8d4b\u503c","duration":"08:08","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"58 set\u5bb9\u5668-\u5927\u5c0f\u548c\u4ea4\u6362","duration":"06:25","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"59 set\u5bb9\u5668-\u63d2\u5165\u548c\u5220\u9664","duration":"05:53","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"60 set\u5bb9\u5668-\u67e5\u627e\u548c\u7edf\u8ba1","duration":"06:36","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"61 set\u5bb9\u5668-set\u548cmultiset\u533a\u522b","duration":"08:34","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"62 pari\u4f7f\u7528-pair\u5bf9\u7ec4\u7684\u521b\u5efa","duration":"04:16","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"63 set\u5bb9\u5668-\u5185\u7f6e\u7c7b\u578b\u6307\u5b9a\u6392\u5e8f\u89c4\u5219","duration":"08:15","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"64 set\u5bb9\u5668-\u81ea\u5b9a\u4e49\u6570\u636e\u7c7b\u578b\u6307\u5b9a\u6392\u5e8f\u89c4\u5219","duration":"06:46","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"65 map\u5bb9\u5668-\u6784\u9020\u548c\u8d4b\u503c","duration":"10:08","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"66 map\u5bb9\u5668-\u5927\u5c0f\u548c\u4ea4\u6362","duration":"07:29","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"67 map\u5bb9\u5668-\u63d2\u5165\u548c\u5220\u9664","duration":"11:19","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"68 map\u5bb9\u5668-\u67e5\u627e\u548c\u7edf\u8ba1","duration":"06:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"69 map\u5bb9\u5668-\u6392\u5e8f","duration":"07:16","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"70 STL\u6848\u4f8b2-\u5458\u5de5\u5206\u7ec4","duration":"21:59","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"71 \u51fd\u6570\u5bf9\u8c61-\u51fd\u6570\u5bf9\u8c61\u57fa\u672c\u4f7f\u7528","duration":"11:07","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"72 \u8c13\u8bcd-\u4e00\u5143\u8c13\u8bcd","duration":"08:29","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"73 \u8c13\u8bcd-\u4e8c\u5143\u8c13\u8bcd","duration":"06:24","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"74 \u5185\u5efa\u51fd\u6570\u5bf9\u8c61-\u7b97\u672f\u4eff\u51fd\u6570","duration":"06:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"75 \u5185\u5efa\u51fd\u6570\u5bf9\u8c61-\u5173\u7cfb\u4eff\u51fd\u6570","duration":"07:09","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"76 \u5185\u5efa\u51fd\u6570\u5bf9\u8c61-\u903b\u8f91\u4eff\u51fd\u6570","duration":"07:38","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"77 \u5e38\u7528\u904d\u5386\u7b97\u6cd5-for_each","duration":"06:31","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"78 \u5e38\u7528\u904d\u5386\u7b97\u6cd5-transform","duration":"06:17","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"79 \u5e38\u7528\u904d\u5386\u7b97\u6cd5-find","duration":"12:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"80 \u5e38\u7528\u67e5\u627e\u7b97\u6cd5-find_if","duration":"09:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"81 \u5e38\u7528\u67e5\u627e\u7b97\u6cd5-adjacent_find","duration":"04:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"82 \u5e38\u7528\u67e5\u627e\u7b97\u6cd5-binary_search","duration":"05:25","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"83 \u5e38\u7528\u67e5\u627e\u7b97\u6cd5-count","duration":"10:17","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"84 \u5e38\u7528\u67e5\u627e\u7b97\u6cd5-count_if","duration":"09:12","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"85 \u5e38\u7528\u6392\u5e8f\u7b97\u6cd5-sort","duration":"05:32","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"86 \u5e38\u7528\u6392\u5e8f\u7b97\u6cd5-random_shuffle","duration":"04:52","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"87 \u5e38\u7528\u6392\u5e8f\u7b97\u6cd5-merge","duration":"05:48","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"88 \u5e38\u7528\u6392\u5e8f\u7b97\u6cd5-reverse","duration":"04:02","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"89 \u5e38\u7528\u62f7\u8d1d\u548c\u66ff\u6362\u7b97\u6cd5-copy","duration":"04:57","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"90 \u5e38\u7528\u62f7\u8d1d\u548c\u66ff\u6362\u7b97\u6cd5-replace","duration":"04:52","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"91 \u5e38\u7528\u62f7\u8d1d\u548c\u66ff\u6362\u7b97\u6cd5-replace_if","duration":"05:58","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"92 \u5e38\u7528\u62f7\u8d1d\u548c\u66ff\u6362\u7b97\u6cd5-swap","duration":"04:19","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"93 \u5e38\u7528\u7b97\u672f\u751f\u6210\u7b97\u6cd5-accumulate","duration":"05:19","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"94 \u5e38\u7528\u7b97\u672f\u751f\u6210\u7b97\u6cd5-fill","duration":"03:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"95 \u5e38\u7528\u96c6\u5408\u7b97\u6cd5-set_intersection","duration":"10:27","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"96 \u5e38\u7528\u96c6\u5408\u7b97\u6cd5-set_union","duration":"07:24","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"97 \u5e38\u7528\u96c6\u5408\u7b97\u6cd5-set_difference","duration":"10:31","stage":"\u7b2c5\u9636\u6bb5\uff1aC++\u63d0\u9ad8\u7f16\u7a0b"},{"title":"01 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u6bd4\u8d5b\u9700\u6c42\u5206\u6790\u4ee5\u53ca\u6210\u54c1\u5c55\u793a","duration":"08:37","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"02 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u9879\u76ee\u7684\u521b\u5efa","duration":"03:20","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"03 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u6f14\u8bb2\u6bd4\u8d5b\u7ba1\u7406\u7c7b\u521b\u5efa","duration":"04:26","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"04 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u83dc\u5355\u529f\u80fd\u754c\u9762\u642d\u5efa","duration":"04:16","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"05 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u9000\u51fa\u7cfb\u7edf\u529f\u80fd\u5b9e\u73b0","duration":"06:38","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"06 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u9009\u624b\u7c7b\u521b\u5efa","duration":"04:31","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"07 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u5bb9\u5668\u7684\u8bbe\u8ba1\u4ee5\u53ca\u521d\u59cb\u5316\u64cd\u4f5c","duration":"07:21","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"08 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u521b\u5efa\u9009\u624b","duration":"09:34","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"09 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u62bd\u7b7e\u529f\u80fd\u5b9e\u73b0","duration":"10:32","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"10 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u6bd4\u8d5b\u529f\u80fd\u5b9e\u73b0","duration":"31:10","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"11 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u663e\u793a\u664b\u7ea7\u9009\u624b\u4fe1\u606f","duration":"06:07","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"12 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u7b2c\u4e8c\u8f6e\u6bd4\u8d5b\u6d41\u7a0b\u5b9e\u73b0","duration":"03:01","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"13 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u4fdd\u5b58\u8bb0\u5f55\u529f\u80fd\u5b9e\u73b0","duration":"08:33","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"14 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u8bfb\u53d6\u8bb0\u5f55-\u83b7\u53d6\u5f80\u5c4a\u5206\u6570","duration":"12:50","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"15 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u8bfb\u53d6\u8bb0\u5f55-\u89e3\u6790\u6587\u4ef6\u4e2d\u7684\u6570\u636e","duration":"11:33","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"16 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u67e5\u770b\u5f80\u5c4a\u8bb0\u5f55\u529f\u80fd\u5b9e\u73b0","duration":"04:53","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"17 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u89e3\u51b3\u7a0b\u5e8f\u4e2d\u7684bug","duration":"11:55","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"18 \u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf-\u6e05\u7a7a\u8bb0\u5f55\u529f\u80fd\u5b9e\u73b0","duration":"08:07","stage":"\u7b2c6\u9636\u6bb5\uff1a\u6f14\u8bb2\u6bd4\u8d5b\u6d41\u7a0b\u7ba1\u7406\u7cfb\u7edf"},{"title":"01 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u9700\u6c42\u5206\u6790\u4ecb\u7ecd","duration":"08:04","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"02 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6210\u54c1\u5c55\u793a","duration":"07:34","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"03 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u521b\u5efa\u9879\u76ee","duration":"02:44","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"04 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u4e3b\u83dc\u5355\u754c\u9762\u642d\u5efa\u4ee5\u53ca\u63d0\u4f9b\u767b\u5f55\u63a5\u53e3","duration":"08:31","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"05 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u9000\u51fa\u529f\u80fd\u5b9e\u73b0","duration":"01:57","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"06 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u8eab\u4efd\u7684\u62bd\u8c61\u57fa\u7c7b\u521b\u5efa","duration":"05:31","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"07 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u7c7b\u7684\u521b\u5efa","duration":"08:50","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"08 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6559\u5e08\u7c7b\u521b\u5efa","duration":"05:35","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"09 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u7ba1\u7406\u5458\u7c7b\u521b\u5efa","duration":"07:01","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"10 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5168\u5c40\u6587\u4ef6\u6dfb\u52a0","duration":"04:30","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"11 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u767b\u5f55\u51fd\u6570\u63a5\u53e3\u5c01\u88c5","duration":"14:20","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"12 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u8eab\u4efd\u767b\u5f55\u5b9e\u73b0","duration":"09:16","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"13 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6559\u5e08\u8eab\u4efd\u767b\u5f55\u5b9e\u73b0","duration":"06:59","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"14 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u7ba1\u7406\u5458\u8eab\u4efd\u767b\u5f55\u5b9e\u73b0","duration":"05:28","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"15 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u7ba1\u7406\u5458\u5b50\u83dc\u5355\u642d\u5efa\u4ee5\u53ca\u6ce8\u9500\u5b9e\u73b0","duration":"16:17","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"16 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u7ba1\u7406\u5458\u6dfb\u52a0\u8d26\u53f7\u5b9e\u73b0","duration":"13:35","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"17 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u83b7\u53d6\u6587\u4ef6\u4e2d\u5b66\u751f\u548c\u8001\u5e08\u4fe1\u606f","duration":"11:31","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"18 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u68c0\u6d4b\u8d26\u53f7\u91cd\u590d\u7684\u529f\u80fd\u5b9e\u73b0","duration":"13:33","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"19 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u89e3\u51b3\u68c0\u6d4b\u91cd\u590d\u8d26\u53f7\u6dfb\u52a0\u4e2d\u7684bug","duration":"04:46","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"20 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u67e5\u770b\u8d26\u53f7\u529f\u80fd\u5b9e\u73b0","duration":"07:52","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"21 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u67e5\u770b\u673a\u623f\u4fe1\u606f\u529f\u80fd\u5b9e\u73b0","duration":"09:51","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"22 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6e05\u7a7a\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"03:49","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"23 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u5b50\u83dc\u5355\u642d\u5efa\u4ee5\u53ca\u6ce8\u9500\u5b9e\u73b0","duration":"11:44","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"24 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u7533\u8bf7\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"17:21","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"25 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u9884\u7ea6\u7c7b\u7684\u5bb9\u5668\u5c5e\u6027\u5206\u6790","duration":"08:57","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"26 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u9884\u7ea6\u7c7b\u4e2d\u83b7\u53d6\u6240\u6709\u9884\u7ea6\u4fe1\u606f","duration":"22:54","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"27 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u66f4\u65b0\u9884\u7ea6\u8bb0\u5f55\u529f\u80fd\u5b9e\u73b0","duration":"05:39","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"28 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u663e\u793a\u81ea\u8eab\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"12:55","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"29 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u663e\u793a\u6240\u6709\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"09:14","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"30 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u5b66\u751f\u53d6\u6d88\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"19:04","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"31 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6559\u5e08\u5b50\u83dc\u5355\u642d\u5efa\u4ee5\u53ca\u6ce8\u9500\u5b9e\u73b0","duration":"09:29","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"32 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6559\u5e08\u663e\u793a\u6240\u6709\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"08:00","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"},{"title":"33 \u673a\u623f\u9884\u7ea6\u7cfb\u7edf-\u6559\u5e08\u5ba1\u6838\u9884\u7ea6\u529f\u80fd\u5b9e\u73b0","duration":"18:15","stage":"\u7b2c7\u9636\u6bb5\uff1a\u673a\u623f\u9884\u7ea6\u7cfb\u7edf"}];
+const $ = id => document.getElementById(id);
+const LOG_KEY = "cpp-study-daily-records-v1";
+const POSITION_KEY = "cpp-study-position-v1";
+const IDLE_FILTER_KEY = "cpp-study-hide-idle-days-v1";
+const REVIEW_DISPLAY_KEY = "cpp-study-show-review-v1";
+const TITLE = "黑马程序员匠心之作｜C++教程从0到1入门编程";
+const durations = BASE.map(x => x.duration.split(":").reduce((s, n) => s * 60 + Number(n), 0));
+const totalSeconds = durations.reduce((sum, n) => sum + n, 0);
+const minutes = seconds => (seconds / 60).toFixed(1) + " 分钟";
+const sumSeconds = episodes => episodes.reduce((sum, n) => sum + durations[n - 1], 0);
+let records = [];
+let recordsReadable = true;
+let editingDate = null;
+let hideIdleDays = true;
+try { hideIdleDays = localStorage.getItem(IDLE_FILTER_KEY) !== "false"; } catch (error) { /* The filter also works without storage. */ }
+let showReview = true;
+try { showReview = localStorage.getItem(REVIEW_DISPLAY_KEY) !== "false"; } catch (error) { /* Display preferences never block manual records. */ }
+const chartReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const CHART_TRANSITION_MS = 420;
+let chartMotion = null;
+let chartNeedsRender = false;
+
+function applyTheme(theme) {
+ document.documentElement.dataset.theme = theme;
+ const next = theme === "dark" ? "浅色" : "深色";
+ $("themeToggle").textContent = "切换" + next;
+ $("themeToggle").setAttribute("aria-label", "切换到" + next + "主题");
+ $("themeToggle").title = "当前为" + (theme === "dark" ? "深色" : "浅色") + "主题";
+}
+
+function showMessage(text, error = false, scope = "daily") {
+ const message = $(scope === "browse" ? "browseMessage" : "message");
+ message.textContent = text;
+ message.className = "message" + (error ? " error" : "");
+ message.hidden = !text;
+}
+
+function validDate(value) {
+ if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.slice(0, 4) === "0000") return false;
+ const date = new Date(value + "T00:00:00Z");
+ return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function parseEpisodes(value) {
+ const text = value.trim().replace(/[，、；;]/g, ",").replace(/[～~—–至到]/g, "-")
+  .replace(/\b[Pp]\s*(?=\d)/g, "").replace(/\s*-\s*/g, "-");
+ if (!text) throw new Error("请填写当天学习的分集编号，例如 1-10, 15。");
+ const tokens = text.split(/[,\s]+/).filter(Boolean);
+ if (!tokens.length) throw new Error("请填写有效的分集编号。");
+ const episodes = new Set();
+ for (const token of tokens) {
+  const match = /^(\d+)(?:-(\d+))?$/.exec(token);
+  if (!match) throw new Error("无法识别“" + token + "”。请使用 1-10, 15 这样的格式。");
+  const start = Number(match[1]), end = Number(match[2] || match[1]);
+  if (start < 1 || end > BASE.length || start > end) {
+   throw new Error("分集编号须在 1～" + BASE.length + " 之间，范围从小到大填写。");
+  }
+  for (let n = start; n <= end; n++) episodes.add(n);
+ }
+ return [...episodes].sort((a, b) => a - b);
+}
+
+function formatEpisodes(episodes) {
+ const ranges = [];
+ for (let i = 0; i < episodes.length; i++) {
+  const start = episodes[i];
+  let end = start;
+  while (i + 1 < episodes.length && episodes[i + 1] === end + 1) end = episodes[++i];
+  ranges.push(start === end ? String(start) : start + "-" + end);
+ }
+ return ranges.join(", ");
+}
+
+// Only explicitly saved daily records feed statistics; legacy checkmarks never do.
+function loadRecords() {
+ try {
+  const raw = localStorage.getItem(LOG_KEY);
+  if (raw === null) return;
+  const saved = JSON.parse(raw);
+  if (saved?.version !== 1 || !Array.isArray(saved.records)) throw new Error("invalid records");
+  const dates = new Set();
+  const loaded = saved.records.map(record => {
+   if (!record || !validDate(record.date) || dates.has(record.date) || !Array.isArray(record.episodes) || !record.episodes.length ||
+    record.episodes.some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) throw new Error("invalid record");
+   dates.add(record.date);
+   return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b) };
+  });
+  records = loaded.sort((a, b) => b.date.localeCompare(a.date));
+ } catch (error) {
+  recordsReadable = false;
+  $("saveRecord").disabled = true;
+  showMessage("记录读取失败，已暂停保存。原数据未修改，请检查浏览器存储设置。", true);
+ }
+}
+
+function loadPosition() {
+ try {
+  const raw = localStorage.getItem(POSITION_KEY);
+  if (raw !== null) {
+   const saved = JSON.parse(raw);
+   if (Number.isInteger(saved) && saved >= 0 && saved <= BASE.length) return saved;
+  }
+ } catch (error) { /* Keep the old marker available when the new key is unavailable. */ }
+ const readLegacy = key => {
+  try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; }
+  catch (error) { return []; }
+ };
+ const saved = readLegacy("cpp-study-progress-v2"), old = readLegacy("cpp-progress-v1");
+ let last = 0;
+ BASE.forEach((_, i) => { if (Boolean(saved[i]?.done ?? old[i]?.done)) last = i + 1; });
+ return last;
+}
+
+let position = loadPosition();
+
+function renderStatistics() {
+ if (!recordsReadable) {
+  $("vDone").textContent = "— / " + BASE.length;
+  $("vPct").textContent = "—";
+  $("vHours").textContent = "— / " + minutes(totalSeconds);
+  $("vLeft").textContent = "—";
+  $("progressBar").setAttribute("aria-valuetext", "每日记录读取失败，统计暂不可用");
+  return;
+ }
+ const completed = [...new Set(records.flatMap(record => record.episodes))];
+ const learned = sumSeconds(completed);
+ const percent = totalSeconds > 0 ? learned / totalSeconds * 100 : 0;
+ $("vDone").textContent = completed.length + " / " + BASE.length;
+ $("vPct").textContent = percent.toFixed(1) + "%";
+ $("vHours").textContent = (learned / 60).toFixed(1) + " / " + minutes(totalSeconds);
+ $("vLeft").textContent = BASE.length - completed.length;
+ $("progressFill").style.width = percent + "%";
+ $("progressBar").setAttribute("aria-valuenow", percent.toFixed(1));
+}
+
+// Forecast the exact selected prefix independently of manual records and list filters.
+function renderPreviewStatistics() {
+ const learned = durations.slice(0, position).reduce((sum, seconds) => sum + seconds, 0);
+ const percent = totalSeconds > 0 ? learned / totalSeconds * 100 : 0;
+ $("previewDone").textContent = position + " / " + BASE.length;
+ $("previewPct").textContent = percent.toFixed(1) + "%";
+ $("previewHours").textContent = (learned / 60).toFixed(1) + " / " + minutes(totalSeconds);
+ $("previewLeft").textContent = BASE.length - position;
+ $("previewProgressFill").style.width = percent + "%";
+ $("previewProgressBar").setAttribute("aria-valuenow", percent.toFixed(1));
+ $("positionLabel").textContent = position ? "预览至 P" + position : "未选择分集";
+ $("jumpToPosition").disabled = position === 0;
+ $("jumpToPosition").title = position ? "跳转至 P" + position : "尚未选择分集";
+}
+
+// Missing dates are display-only placeholders, never added to saved records.
+// UTC day steps avoid skipped or duplicated dates around daylight-saving changes.
+function getDailyDisplay() {
+ // Classify against all saved dates, before applying either display switch.
+ // Recompute after edits/backfills so the earliest recorded date owns first study.
+ const seen = new Set();
+ const saved = [...records].sort((a, b) => a.date.localeCompare(b.date)).map(record => {
+  let firstSeconds = 0, reviewSeconds = 0, firstCount = 0, reviewCount = 0;
+  for (const episode of record.episodes) {
+   if (seen.has(episode)) { reviewSeconds += durations[episode - 1]; reviewCount++; }
+   else { firstSeconds += durations[episode - 1]; firstCount++; seen.add(episode); }
+  }
+  return { ...record, firstSeconds, reviewSeconds, firstCount, reviewCount };
+ });
+ if (!saved.length) return { days: [], gapCount: 0, limited: false };
+ const first = Date.parse(saved[0].date + "T00:00:00Z");
+ const last = Date.parse(saved[saved.length - 1].date + "T00:00:00Z");
+ const span = Math.round((last - first) / 86400000) + 1;
+ const gapCount = span - saved.length;
+ // Protect the offline page from accidental centuries-wide date ranges.
+ const limited = !hideIdleDays && span > 3660;
+ if (hideIdleDays || limited) return { days: saved, gapCount, limited };
+ const byDate = new Map(saved.map(record => [record.date, record]));
+ const days = [];
+ for (let time = first; time <= last; time += 86400000) {
+  const date = new Date(time).toISOString().slice(0, 10);
+  days.push(byDate.get(date) || { date, episodes: [], unrecorded: true, firstSeconds: 0, reviewSeconds: 0, firstCount: 0, reviewCount: 0 });
+ }
+ return { days, gapCount, limited };
+}
+
+function updateDayFilterInfo(display) {
+ $("hideIdleDays").setAttribute("aria-checked", String(hideIdleDays));
+ const hint = $("dayFilterHint");
+ hint.className = "note" + (display.limited ? " error" : "");
+ hint.textContent = display.limited ? "日期跨度超过 3660 天，暂只显示有记录的日期，请检查日期。" : "";
+ hint.hidden = !display.limited;
+}
+
+function updateReviewDisplayInfo() {
+ $("showReview").setAttribute("aria-checked", String(showReview));
+ $("reviewLegend").textContent = showReview ? "跨天复习" : "跨天复习（已隐藏）";
+ $("reviewDisplayHint").textContent = "课程进度去重，每日时长含复习；开关仅影响显示。";
+}
+
+function renderDailyRecords(animateChart = false) {
+ const display = getDailyDisplay();
+ updateDayFilterInfo(display);
+ const container = $("dailyRecords");
+ container.replaceChildren();
+ const studyCount = records.reduce((sum, record) => sum + record.episodes.length, 0);
+ const studySeconds = records.reduce((sum, record) => sum + sumSeconds(record.episodes), 0);
+ $("dailySummary").textContent = "累计 " + records.length + " 天 · " + studyCount + " 集次 · " + minutes(studySeconds) + "（含复习）";
+ if (!records.length) {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  const title = document.createElement("strong");
+  title.textContent = recordsReadable ? "暂无记录" : "记录读取失败";
+  empty.append(title, document.createTextNode(recordsReadable ? "选择日期、填写分集后保存。" : "请检查浏览器存储设置。"));
+  container.append(empty);
+ }
+ for (const record of [...display.days].reverse()) {
+  const row = document.createElement("article");
+  row.className = "daily-record" + (record.unrecorded ? " unrecorded" : "");
+  row.dataset.date = record.date;
+  const date = document.createElement("time"); date.dateTime = record.date; date.textContent = record.date;
+  const episodes = document.createElement("div"); episodes.className = "record-episodes";
+  const caption = document.createElement("div"); caption.className = "record-caption"; caption.textContent = record.unrecorded ? "未记录" : "分集（P）";
+  episodes.append(caption, document.createTextNode(record.unrecorded ? "—" : formatEpisodes(record.episodes)));
+  const count = document.createElement("div"); count.className = "record-count"; count.textContent = record.episodes.length + " 集";
+  const duration = document.createElement("div"); duration.className = "record-minutes"; duration.textContent = minutes(sumSeconds(record.episodes));
+  const actions = document.createElement("div"); actions.className = "record-actions";
+  const edit = document.createElement("button"); edit.type = "button"; edit.textContent = record.unrecorded ? "补记" : "修改"; edit.dataset.action = record.unrecorded ? "add" : "edit"; edit.setAttribute("aria-label", (record.unrecorded ? "补记 " : "修改 ") + record.date + " 的记录");
+  actions.append(edit);
+  if (!record.unrecorded) {
+   const remove = document.createElement("button"); remove.type = "button"; remove.className = "danger"; remove.textContent = "删除"; remove.dataset.action = "delete"; remove.setAttribute("aria-label", "删除 " + record.date + " 的记录");
+   actions.append(remove);
+  }
+  row.append(date, episodes, count, duration, actions);
+  container.append(row);
+ }
+ renderDailyChart(animateChart, display);
+}
+
+function svgElement(name, attributes = {}, text) {
+ const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+ for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+ if (text !== undefined) element.textContent = text;
+ return element;
+}
+
+function finishDailyChartAnimation() {
+ if (!chartMotion) return;
+ const motion = chartMotion;
+ cancelAnimationFrame(motion.frame);
+ chartMotion = null;
+ motion.finish();
+}
+
+// Fit labels using their actual horizontal positions, including clamped endpoints.
+// Only labels are sampled: every date still keeps its own column and detail data.
+function chartLabelIndexes(count, minimumGap, centerAt) {
+ const indexes = [];
+ for (let i = 0; i < count; i++) {
+  if (!indexes.length || centerAt(i) - centerAt(indexes[indexes.length - 1]) >= minimumGap) indexes.push(i);
+ }
+ const last = count - 1;
+ if (last > 0 && indexes[indexes.length - 1] !== last) {
+  while (indexes.length > 1 && centerAt(last) - centerAt(indexes[indexes.length - 1]) < minimumGap) indexes.pop();
+  indexes.push(last);
+ }
+ return new Set(indexes);
+}
+
+// Keep each date's SVG nodes, interpolating from the currently displayed state.
+// This also lets a rapid second save interrupt an animation without snapping backward.
+function renderDailyChart(animate = false, display = getDailyDisplay()) {
+ updateReviewDisplayInfo();
+ const chart = $("dailyChart");
+ if (!chart.clientWidth) {
+  chartNeedsRender = true;
+  finishDailyChartAnimation();
+  return;
+ }
+ chartNeedsRender = false;
+ if (chartMotion) {
+  cancelAnimationFrame(chartMotion.frame);
+  chartMotion = null;
+ }
+ chart.scrollLeft = 0;
+ $("chartDetail").textContent = "悬停或点击柱子查看详情。";
+ const showEmpty = () => {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  empty.textContent = recordsReadable ? "暂无学习数据" : "记录读取失败，图表不可用。";
+  chart.replaceChildren(empty);
+ };
+ let svg = chart.querySelector("svg");
+ if (!records.length && !svg) {
+  showEmpty();
+  chart.dataset.animating = "false";
+  return;
+ }
+ const days = display.days;
+ const values = days.map(record => (record.firstSeconds + (showReview ? record.reviewSeconds : 0)) / 60);
+ const maxValue = Math.max(1, ...values);
+ const rawStep = maxValue / 4;
+ const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+ const step = [1, 2, 5, 10].find(n => n >= rawStep / magnitude) * magnitude;
+ const axisMax = Math.ceil(maxValue / step) * step;
+ // The SVG always fits its viewport. More days narrow the columns, not widen the page.
+ const width = chart.clientWidth;
+ const height = 240, left = 50, right = 24, top = 42, bottom = 34;
+ const plotHeight = height - top - bottom;
+ const plotWidth = width - left - right;
+ const baseline = top + plotHeight;
+ const slotWidth = plotWidth / Math.max(1, days.length);
+ const barWidth = Math.min(38, slotWidth * (slotWidth < 20 ? .88 : .72));
+ const fullDates = slotWidth >= 76 || new Set(days.map(record => record.date.slice(0, 4))).size > 1;
+ const dateLabelWidth = fullDates ? 70 : 42;
+ const centerAt = i => left + slotWidth * (i + .5);
+ const dateCenterAt = i => Math.max(left + dateLabelWidth / 2, Math.min(width - right - dateLabelWidth / 2, centerAt(i)));
+ const dateIndexes = chartLabelIndexes(days.length, dateLabelWidth + 8, dateCenterAt);
+ const largestValue = Math.max(0, ...days.map(record => Math.max(record.firstSeconds, showReview ? record.reviewSeconds : 0) / 60));
+ if (!svg) {
+  svg = svgElement("svg", { height, role: "img", "aria-labelledby": "chartSvgTitle chartSvgDescription" });
+  svg.append(svgElement("title", { id: "chartSvgTitle" }, "每日学习分钟柱状图"));
+  svg.append(svgElement("desc", { id: "chartSvgDescription" }));
+  chart.replaceChildren(svg);
+ }
+ // Measure the actual font, shrinking labels before sampling crowded columns.
+ const labelProbe = svgElement("text", { class: "chart-value", visibility: "hidden", "aria-hidden": "true" }, largestValue.toFixed(1));
+ labelProbe.style.fontSize = "12px";
+ svg.append(labelProbe);
+ const labelWidthAtMax = Math.max(1, labelProbe.getComputedTextLength());
+ labelProbe.remove();
+ const valueFontSize = Math.max(9, Math.min(12, (slotWidth - 5) * 12 / labelWidthAtMax));
+ const valueLabelWidth = labelWidthAtMax * valueFontSize / 12 + 4;
+ const valueIndexes = chartLabelIndexes(days.length, valueLabelWidth, centerAt);
+ svg.querySelector("desc").textContent = "横轴日期，纵轴分钟。蓝色首次学习，红色跨天复习" + (showReview ? "。" : "（已隐藏）。") + "共 " + days.length + " 天，可聚焦柱子查看详情。";
+ const setWidth = value => {
+  svg.setAttribute("width", value);
+  svg.setAttribute("viewBox", "0 0 " + value + " " + height);
+ };
+ setWidth(width);
+ const oldAxes = [...svg.querySelectorAll(".chart-axis-layer")];
+ const axisKey = [width, axisMax, step].join(":");
+ let axis = days.length ? oldAxes.find(layer => layer.dataset.key === axisKey) : null;
+ if (days.length && !axis) {
+  axis = svgElement("g", { class: "chart-axis-layer", opacity: 0, "data-key": axisKey });
+  for (let tick = 0; tick <= Math.ceil(axisMax / step); tick++) {
+   const value = tick * step, y = baseline - value / axisMax * plotHeight;
+   axis.append(svgElement("line", { x1: left, y1: y, x2: width - right, y2: y, class: "chart-grid" }));
+   axis.append(svgElement("text", { x: left - 9, y: y + 4, "text-anchor": "end", class: "chart-axis" }, String(Number(value.toFixed(1)))));
+  }
+  svg.insertBefore(axis, svg.querySelector(".chart-day"));
+ }
+ const axisTransitions = [...new Set([...oldAxes, axis].filter(Boolean))].map(layer => {
+  const to = layer === axis ? 1 : 0;
+  layer.setAttribute("aria-hidden", String(!to));
+  return { layer, from: Number(layer.getAttribute("opacity") ?? 1), to };
+ });
+ // Draw all text above all columns so a neighboring tall bar cannot cover a label.
+ const labelLayer = svg.querySelector(".chart-label-layer") || svgElement("g", { class: "chart-label-layer", "pointer-events": "none", "aria-hidden": "true" });
+ const existing = new Map([...svg.querySelectorAll(".chart-day")].map(group => [group.dataset.date, group]));
+ const enteringFontSize = [...existing.values()].find(group => !group.hasAttribute("aria-hidden"))?.chartState.fontSize ?? valueFontSize;
+ const transitions = [];
+ // Keep unrounded values as well as geometry when interrupting a transition.
+ const readState = group => ({ ...group.chartState });
+ const draw = (item, state) => {
+  item.group.chartState = { ...state };
+  item.valueLabel.style.fontSize = item.reviewLabel.style.fontSize = state.fontSize + "px";
+  item.valueLabel.style.strokeWidth = item.reviewLabel.style.strokeWidth = state.fontSize / 6 + "px";
+  item.hit.setAttribute("x", state.center - state.slotWidth / 2);
+  item.hit.setAttribute("y", top);
+  item.hit.setAttribute("width", state.slotWidth);
+  item.hit.setAttribute("height", plotHeight);
+  item.bar.setAttribute("x", state.center - state.width / 2);
+  item.bar.setAttribute("y", baseline - state.height);
+  item.bar.setAttribute("width", state.width);
+  item.bar.setAttribute("height", state.height);
+  item.reviewBar.setAttribute("x", state.center - state.width / 2);
+  item.reviewBar.setAttribute("y", baseline - state.height - state.reviewHeight);
+  item.reviewBar.setAttribute("width", state.width);
+  item.reviewBar.setAttribute("height", state.reviewHeight);
+  item.reviewBar.setAttribute("opacity", state.reviewOpacity);
+  item.reviewBar.setAttribute("visibility", state.reviewOpacity > 0 ? "visible" : "hidden");
+  item.valueLabel.setAttribute("x", state.center);
+  item.valueLabel.setAttribute("y", baseline - state.height - state.reviewHeight - 7);
+  item.valueLabel.textContent = state.value.toFixed(1);
+  item.valueLabel.setAttribute("opacity", state.labelOpacity);
+  item.valueLabel.setAttribute("visibility", state.labelOpacity > 0 ? "visible" : "hidden");
+  item.reviewLabel.setAttribute("x", state.center);
+  item.reviewLabel.setAttribute("y", baseline - state.height - state.reviewHeight - 23);
+  item.reviewLabel.setAttribute("opacity", state.reviewOpacity * state.labelOpacity);
+  item.reviewLabel.setAttribute("visibility", state.reviewOpacity * state.labelOpacity > 0 ? "visible" : "hidden");
+  item.reviewLabel.textContent = state.reviewValue.toFixed(1);
+  item.dateLabel.setAttribute("x", state.dateCenter);
+  item.dateLabel.setAttribute("opacity", state.dateOpacity);
+  item.dateLabel.setAttribute("visibility", state.dateOpacity > 0 ? "visible" : "hidden");
+  item.group.setAttribute("opacity", state.opacity);
+  item.labels.setAttribute("opacity", state.opacity);
+ };
+ const makeTransition = (group, from, to, remove = false) => {
+  const labels = group.chartLabels;
+  const item = { group, labels, hit: group.querySelector(".chart-hit"), bar: group.querySelector('[data-series="first"]'), reviewBar: group.querySelector('[data-series="review"]'), valueLabel: labels.querySelector(".chart-value"), reviewLabel: labels.querySelector(".review-value"), dateLabel: labels.querySelector(".chart-date"), from, to, remove };
+  transitions.push(item);
+  draw(item, from);
+  return item;
+ };
+ const focusedDate = document.activeElement?.closest?.(".chart-day")?.dataset.date;
+ const focusedSeries = document.activeElement?.dataset.series;
+ days.forEach((record, i) => {
+  const value = record.firstSeconds / 60, reviewValue = record.reviewSeconds / 60;
+  const visibleReview = showReview && reviewValue > 0;
+  const totalValue = (record.firstSeconds + record.reviewSeconds) / 60;
+  const barHeight = value / axisMax * plotHeight;
+  const center = centerAt(i);
+  const dateCenter = dateCenterAt(i);
+  const firstLabel = record.date + "：首次学习 " + record.firstCount + " 集，" + value.toFixed(1) + " 分钟";
+  const reviewLabel = record.date + "：跨天复习 " + record.reviewCount + " 集，" + reviewValue.toFixed(1) + " 分钟";
+  const label = record.date + "：" + (record.unrecorded ? "未记录 · 0.0 分钟" : record.episodes.length + " 集，共 " + totalValue.toFixed(1) + " 分钟；首次学习 " + value.toFixed(1) + " 分钟，跨天复习 " + reviewValue.toFixed(1) + " 分钟");
+  let group = existing.get(record.date);
+  const from = group ? readState(group) : { center, slotWidth, dateCenter, fontSize: enteringFontSize, width: barWidth, height: 0, reviewHeight: 0, value: 0, reviewValue: 0, reviewOpacity: 0, labelOpacity: 0, dateOpacity: 0, opacity: 0 };
+  if (!group) {
+   group = svgElement("g", { class: "chart-day", "data-date": record.date });
+   const bar = svgElement("rect", { "data-series": "first" }); bar.append(svgElement("title"));
+   const reviewBar = svgElement("rect", { "data-series": "review" }); reviewBar.append(svgElement("title"));
+   group.append(svgElement("title", { class: "chart-day-title" }), svgElement("rect", { class: "chart-hit", "aria-hidden": "true" }), bar, reviewBar);
+   group.chartLabels = svgElement("g", { "data-date": record.date });
+   group.chartLabels.append(svgElement("text", { class: "chart-value", "text-anchor": "middle" }), svgElement("text", { class: "review-value", "text-anchor": "middle" }), svgElement("text", { class: "chart-axis chart-date", y: baseline + 23, "text-anchor": "middle" }));
+  }
+  existing.delete(record.date);
+  group.setAttribute("class", "chart-day" + (record.unrecorded ? " unrecorded" : ""));
+  group.chartLabels.setAttribute("class", "chart-day-labels" + (record.unrecorded ? " unrecorded" : ""));
+  labelLayer.append(group.chartLabels);
+  group.dataset.totalMinutes = totalValue;
+  group.querySelector(".chart-day-title").textContent = label;
+  group.removeAttribute("aria-hidden");
+  const item = makeTransition(group, from, { center, slotWidth, dateCenter, fontSize: valueFontSize, width: barWidth, height: barHeight, reviewHeight: visibleReview ? reviewValue / axisMax * plotHeight : 0, value, reviewValue: visibleReview ? reviewValue : 0, reviewOpacity: visibleReview ? 1 : 0, labelOpacity: valueIndexes.has(i) ? 1 : 0, dateOpacity: dateIndexes.has(i) ? 1 : 0, opacity: 1 });
+  item.hit.style.removeProperty("pointer-events");
+  item.dateLabel.textContent = fullDates ? record.date : record.date.slice(5);
+  item.dateLabel.setAttribute("aria-hidden", String(!dateIndexes.has(i)));
+  item.valueLabel.setAttribute("aria-hidden", String(!valueIndexes.has(i)));
+  for (const [key, text] of Object.entries({ class: "study-bar", "data-date": record.date, "data-minutes": value, tabindex: value > 0 ? 0 : -1, "aria-label": record.unrecorded ? label : firstLabel })) item.bar.setAttribute(key, text);
+  for (const [key, text] of Object.entries({ class: "review-bar", "data-date": record.date, "data-minutes": reviewValue, tabindex: visibleReview ? 0 : -1, "aria-label": reviewLabel, "aria-hidden": !visibleReview })) item.reviewBar.setAttribute(key, text);
+  item.bar.querySelector("title").textContent = record.unrecorded ? label : firstLabel;
+  item.reviewBar.querySelector("title").textContent = reviewLabel;
+  item.reviewLabel.setAttribute("aria-hidden", String(!visibleReview || !valueIndexes.has(i)));
+  svg.append(group);
+ });
+ for (const group of existing.values()) {
+  const from = readState(group);
+  group.setAttribute("aria-hidden", "true");
+  const item = makeTransition(group, from, { ...from, height: 0, reviewHeight: 0, value: 0, reviewValue: 0, reviewOpacity: 0, labelOpacity: 0, dateOpacity: 0, opacity: 0 }, true);
+  item.hit.style.pointerEvents = "none";
+  item.bar.setAttribute("class", "study-bar-exit");
+  item.bar.setAttribute("tabindex", "-1");
+  item.reviewBar.setAttribute("class", "review-bar-exit");
+  item.reviewBar.setAttribute("tabindex", "-1");
+ }
+ svg.append(labelLayer);
+ if (focusedDate) svg.querySelector('[data-date="' + focusedDate + '"][data-series="' + focusedSeries + '"][tabindex="0"]')?.focus({ preventScroll: true });
+ const finish = () => {
+  for (const item of transitions) {
+   if (item.remove) { item.group.remove(); item.labels.remove(); } else draw(item, item.to);
+  }
+  for (const item of axisTransitions) {
+   if (!item.to) item.layer.remove(); else item.layer.setAttribute("opacity", 1);
+  }
+  if (!days.length) showEmpty(); else setWidth(width);
+  chart.dataset.animating = "false";
+ };
+ const changed = transitions.some(item => item.remove || Object.keys(item.to).some(key => Math.abs(item.to[key] - item.from[key]) > .0001)) || axisTransitions.some(item => item.from !== item.to);
+ if (!animate || chartReducedMotion.matches || !changed || document.hidden) {
+  finish();
+  return;
+ }
+ chart.dataset.animating = "true";
+ const started = performance.now();
+ const motion = { frame: 0, finish };
+ chartMotion = motion;
+ const stepFrame = now => {
+  if (chartMotion !== motion) return;
+  const progress = Math.min(1, (now - started) / CHART_TRANSITION_MS);
+  const eased = 1 - (1 - progress) ** 3;
+  for (const item of transitions) {
+   const state = {};
+   for (const key of Object.keys(item.to)) state[key] = item.from[key] + (item.to[key] - item.from[key]) * eased;
+   draw(item, state);
+  }
+  for (const item of axisTransitions) item.layer.setAttribute("opacity", item.from + (item.to - item.from) * eased);
+  if (progress < 1) motion.frame = requestAnimationFrame(stepFrame);
+  else { chartMotion = null; finish(); }
+ };
+ motion.frame = requestAnimationFrame(stepFrame);
+}
+
+function updatePreview() {
+ const existing = records.find(record => record.date === $("recordDate").value);
+ $("saveRecord").textContent = existing ? "更新当天记录" : "保存当天记录";
+ const preview = $("entryPreview");
+ preview.className = "preview";
+ preview.hidden = !$("recordEpisodes").value.trim();
+ if (preview.hidden) {
+  preview.textContent = "";
+  return;
+ }
+ try {
+  const episodes = parseEpisodes($("recordEpisodes").value);
+  const unchanged = existing && episodes.length === existing.episodes.length && episodes.every((n, i) => n === existing.episodes[i]);
+  preview.textContent = (unchanged ? "已保存 " + existing.date + " · " : "待保存 · ") + episodes.length + " 集 · " + minutes(sumSeconds(episodes)) + (!unchanged && existing ? "（将覆盖当天记录）" : "");
+ } catch (error) {
+  preview.className = "preview error";
+  preview.textContent = error.message;
+ }
+}
+
+function clearForm() {
+ $("recordForm").reset();
+ editingDate = null;
+ updatePreview();
+}
+
+function commitRecords(next, message) {
+ if (!recordsReadable) return false;
+ try {
+  localStorage.setItem(LOG_KEY, JSON.stringify({ version: 1, records: next }));
+ } catch (error) {
+  showMessage("保存失败：浏览器存储不可用或已满。本次修改未保存，请保留输入后重试。", true);
+  return false;
+ }
+ records = next;
+ renderStatistics();
+ renderDailyRecords(true);
+ updatePreview();
+ showMessage(message);
+ return true;
+}
+
+function renderList(resetScroll = false) {
+ const list = $("list"), previousScroll = list.scrollTop;
+ const active = document.activeElement;
+ const focusedEpisode = list.contains(active) ? active.closest(".row")?.dataset.episode : null;
+ const focusedClass = active?.className === "check" ? ".check" : ".title";
+ const query = $("search").value.trim().toLowerCase(), stage = $("stage").value, status = $("status").value;
+ const fragment = document.createDocumentFragment();
+ let count = 0;
+ BASE.forEach((episode, i) => {
+  const n = i + 1, checked = n <= position;
+  if (query && !("p" + n + " " + episode.title).toLowerCase().includes(query)) return;
+  if (stage && episode.stage !== stage) return;
+  if (status && (status === "1" ? !checked : checked)) return;
+  count++;
+  const row = document.createElement("article");
+  row.className = "row" + (checked ? " done" : "") + (n === position ? " current" : "");
+  row.dataset.episode = n;
+  const label = "预览至 P" + n;
+  const cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "check"; cb.checked = checked; cb.title = label; cb.setAttribute("aria-label", label);
+  const no = document.createElement("b"); no.textContent = String(n).padStart(3, "0");
+  const title = document.createElement("button"); title.type = "button"; title.className = "title"; title.textContent = episode.title; title.title = label;
+  const badge = document.createElement("div"); badge.className = "stage"; badge.textContent = episode.stage;
+  const duration = document.createElement("div"); duration.className = "duration"; duration.textContent = minutes(durations[i]);
+  const open = document.createElement("a"); open.className = "open"; open.href = "https://www.bilibili.com/video/BV1et411b73Z/?p=" + n; open.target = "_blank"; open.rel = "noopener noreferrer"; open.textContent = "打开第 " + n + " 集";
+  row.append(cb, no, title, badge, duration, open);
+  fragment.append(row);
+ });
+ if (!count) {
+  const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "没有匹配的分集"; fragment.append(empty);
+ }
+ list.replaceChildren(fragment);
+ list.scrollTop = resetScroll ? 0 : previousScroll;
+ if (focusedEpisode) list.querySelector('[data-episode="' + focusedEpisode + '"] ' + focusedClass)?.focus({ preventScroll: true });
+ renderPreviewStatistics();
+}
+
+// One scalar position guarantees an exact prefix, including repeated clicks on checked items.
+function setPosition(next) {
+ try {
+  localStorage.setItem(POSITION_KEY, JSON.stringify(next));
+  position = next;
+  showMessage("", false, "browse");
+ } catch (error) {
+  showMessage("预览位置保存失败，请检查浏览器存储设置。", true, "browse");
+ }
+ renderList();
+}
+
+function jumpToPosition() {
+ const list = $("list");
+ if (!position || list.hidden) return;
+ let row = list.querySelector('[data-episode="' + position + '"]');
+ if (!row) {
+  // Remove only filters that hide the target; never change the saved position.
+  const episode = BASE[position - 1];
+  const query = $("search").value.trim().toLowerCase();
+  if (query && !("p" + position + " " + episode.title).toLowerCase().includes(query)) $("search").value = "";
+  if ($("stage").value && $("stage").value !== episode.stage) $("stage").value = "";
+  if ($("status").value === "0") $("status").value = "";
+  renderList();
+  row = list.querySelector('[data-episode="' + position + '"]');
+ }
+ if (!row) return;
+ row.querySelector(".title").focus({ preventScroll: true });
+ const top = list.scrollTop + row.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - row.offsetHeight) / 2;
+ list.scrollTo({ top: Math.max(0, Math.min(top, list.scrollHeight - list.clientHeight)), behavior: chartReducedMotion.matches ? "instant" : "smooth" });
+}
+
+function setTab(name) {
+ const daily = name === "daily";
+ $("dailyHeader").hidden = !daily;
+ $("dailyControls").hidden = !daily;
+ $("browseControls").hidden = daily;
+ $("dailyPanel").hidden = !daily;
+ $("list").hidden = daily;
+ if (!daily) finishDailyChartAnimation();
+ else if (chartNeedsRender) renderDailyChart();
+ $("pageTitle").textContent = TITLE + " · " + (daily ? "学习统计" : "分集预览");
+ $("subtitleText").textContent = "共 " + BASE.length + " 集 · 数据仅存本浏览器 · ";
+ for (const id of ["dailyTab", "browseTab"]) {
+  const selected = (id === "dailyTab") === daily;
+  $(id).setAttribute("aria-selected", String(selected));
+  $(id).tabIndex = selected ? 0 : -1;
+ }
+}
+
+$("heading").textContent = TITLE;
+const subtitleText = document.createElement("span"); subtitleText.id = "subtitleText"; $("subtitle").append(subtitleText);
+const sourceLink = document.createElement("a"); sourceLink.href = "https://www.bilibili.com/video/BV1et411b73Z/"; sourceLink.target = "_blank"; sourceLink.rel = "noopener noreferrer"; sourceLink.textContent = "B 站课程"; $("subtitle").append(sourceLink);
+$("stage").append(new Option("全部阶段", ""));
+for (const stage of new Set(BASE.map(episode => episode.stage))) $("stage").append(new Option(stage, stage));
+
+$("recordForm").addEventListener("submit", event => {
+ event.preventDefault();
+ const date = $("recordDate").value;
+ if (!validDate(date)) { showMessage("请选择有效的学习日期。", true); $("recordDate").focus(); return; }
+ let episodes;
+ try { episodes = parseEpisodes($("recordEpisodes").value); }
+ catch (error) { showMessage(error.message, true); $("recordEpisodes").focus(); return; }
+ const next = [...records.filter(record => record.date !== date), { date, episodes }].sort((a, b) => b.date.localeCompare(a.date));
+ if (commitRecords(next, "")) {
+  $("recordEpisodes").value = formatEpisodes(episodes);
+  editingDate = date;
+  updatePreview();
+ }
+});
+$("recordDate").addEventListener("change", () => {
+ const existing = records.find(record => record.date === $("recordDate").value);
+ if (existing) {
+  $("recordEpisodes").value = formatEpisodes(existing.episodes);
+  editingDate = existing.date;
+ } else if (editingDate) {
+  $("recordEpisodes").value = "";
+  editingDate = null;
+ }
+ updatePreview();
+});
+$("recordEpisodes").addEventListener("input", updatePreview);
+$("clearForm").addEventListener("click", () => { clearForm(); if (recordsReadable) showMessage(""); });
+$("dailyRecords").addEventListener("click", event => {
+ const button = event.target.closest("button[data-action]");
+ if (!button) return;
+ const date = button.closest(".daily-record").dataset.date;
+ if (button.dataset.action === "add") {
+  $("recordDate").value = date;
+  $("recordEpisodes").value = "";
+  editingDate = null;
+  updatePreview();
+  $("recordEpisodes").focus();
+  return;
+ }
+ const record = records.find(item => item.date === date);
+ if (!record) return;
+ if (button.dataset.action === "edit") {
+  $("recordDate").value = date;
+  $("recordEpisodes").value = formatEpisodes(record.episodes);
+  editingDate = date;
+  updatePreview();
+  $("recordEpisodes").focus();
+ } else if (confirm("删除 " + date + " 的学习记录？")) {
+  if (commitRecords(records.filter(item => item.date !== date), "已删除 " + date + " 的记录。") && $("recordDate").value === date) clearForm();
+ }
+});
+$("list").addEventListener("click", event => {
+ if (event.target.closest("a")) return;
+ const row = event.target.closest(".row");
+ if (row) setPosition(Number(row.dataset.episode));
+});
+$("clearPosition").addEventListener("click", () => setPosition(0));
+$("jumpToPosition").addEventListener("click", jumpToPosition);
+$("search").addEventListener("input", () => renderList(true));
+$("stage").addEventListener("change", () => renderList(true));
+$("status").addEventListener("change", () => renderList(true));
+$("dailyTab").addEventListener("click", () => setTab("daily"));
+$("browseTab").addEventListener("click", () => setTab("browse"));
+for (const eventName of ["pointermove", "click", "focusin"]) {
+ $("dailyChart").addEventListener(eventName, event => {
+  const group = event.target.closest?.(".chart-day");
+  if (!group || group.getAttribute("aria-hidden") === "true") return;
+  const detail = group.querySelector(".chart-day-title").textContent;
+  if ($("chartDetail").textContent !== detail) $("chartDetail").textContent = detail;
+ });
+}
+$("hideIdleDays").addEventListener("click", () => {
+ hideIdleDays = !hideIdleDays;
+ renderDailyRecords(true);
+ try {
+  localStorage.setItem(IDLE_FILTER_KEY, String(hideIdleDays));
+ } catch (error) {
+  showMessage("无法保存筛选偏好，刷新后可能恢复。", true);
+ }
+});
+$("showReview").addEventListener("click", () => {
+ showReview = !showReview;
+ // Display only: do not recalculate totals, rebuild records, or touch form drafts.
+ renderDailyChart(true);
+ try {
+  localStorage.setItem(REVIEW_DISPLAY_KEY, String(showReview));
+ } catch (error) {
+  showMessage("无法保存复习显示偏好，刷新后可能恢复。", true);
+ }
+});
+$("themeToggle").addEventListener("click", () => {
+ const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+ applyTheme(theme);
+ $("themeNotice").hidden = true;
+ try {
+  localStorage.setItem(THEME_KEY, theme);
+ } catch (error) {
+  $("themeNotice").textContent = "无法保存主题偏好，刷新后可能恢复。";
+  $("themeNotice").hidden = false;
+ }
+});
+document.querySelector(".tabs").addEventListener("keydown", event => {
+ if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+ event.preventDefault();
+ const daily = event.key === "Home" || (event.key !== "End" && event.target.id === "browseTab");
+ setTab(daily ? "daily" : "browse");
+ $(daily ? "dailyTab" : "browseTab").focus();
+});
+applyTheme(document.documentElement.dataset.theme);
+setTab("daily");
+loadRecords();
+renderStatistics();
+renderDailyRecords();
+renderList();
+updatePreview();
+let chartViewportWidth = $("dailyChart").clientWidth;
+new ResizeObserver(entries => {
+ const width = entries[0].contentRect.width;
+ if (width > 0 && width !== chartViewportWidth) {
+  chartViewportWidth = width;
+  renderDailyChart();
+ }
+}).observe($("dailyChart"));
+chartReducedMotion.addEventListener("change", event => { if (event.matches) finishDailyChartAnimation(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) finishDailyChartAnimation(); });
+</script></body></html>

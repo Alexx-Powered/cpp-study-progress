@@ -1,0 +1,2104 @@
+<!doctype html>
+<html lang="zh-CN">
+<!--
+学习进度单文件模板 · 注释版
+整理日期：2026-10-07；参考：C++ 学习进度页面。
+
+复用步骤：
+1. 复制本文件，用 UTF-8 编码保存为新课程的 HTML，可直接用浏览器打开。
+2. 修改下方 TEMPLATE_CONFIG：课程名称、来源链接、独立的 storagePrefix。
+   每门课程或每份独立进度使用不同前缀；已开始记录后保持前缀稳定。
+3. 修改【分集数据 BASE】：按实际播放顺序填写 title、duration、stage。
+   数组第 1 项对应 P1；总集数、阶段筛选、总时长会自动计算。
+   已有进度后若重排或替换课程分集，应为新版本换一个存储前缀。
+4. 其他平台的分集链接，可修改 buildEpisodeUrl() 的链接规则。
+5. 配色在【样式】中调整；动画时长与柱顶字号范围在配置区调整。
+
+源码导航：
+【配置】→【样式】→【页面结构】→【分集数据】→【状态与计算】
+→【记录读取与统计】→【每日图表】→【表单与预览】→【事件与初始化】
+
+数据约定：
+- 每日记录：{ version: 1, records: [{ date: "YYYY-MM-DD", episodes: [1, 2] }] }。
+- 预览位置：0 表示未选，n 表示前面的 P1～Pn 全部勾选。
+- 课程完成进度按分集去重、按原始秒数计算；每日学习分钟包含跨天复习。
+- 学习记录由浏览器 localStorage 保存，本文件内保留的是课程元数据。
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title id="pageTitle"></title>
+<script>
+/*
+【配置】复用模板时优先修改这里。
+storagePrefix 决定各项浏览器存储键，复制成独立课程时需要换成唯一值。
+legacyPositionKeys 留空表示从独立进度开始；仅迁移同一课程旧版时填写旧键。
+字号单位为 px，保持 valueFontMin <= valueFontMax；动画时长单位为毫秒。
+*/
+const TEMPLATE_CONFIG = {
+ storagePrefix: "learning-progress-template",
+ title: "黑马程序员匠心之作｜C++教程从0到1入门编程",
+ courseUrl: "https://www.bilibili.com/video/BV1et411b73Z/",
+ courseLinkText: "B 站课程",
+ legacyPositionKeys: [],
+ chartTransitionMs: 420,
+ valueFontMin: 9,
+ valueFontMax: 12
+};
+
+// 首次绘制前恢复深浅主题，避免页面先亮后暗；存储不可用时采用浅色。
+const THEME_KEY = TEMPLATE_CONFIG.storagePrefix + "-theme-v1";
+try {
+ document.documentElement.dataset.theme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+} catch (error) {
+ document.documentElement.dataset.theme = "light";
+}
+</script>
+<style>
+/* 【样式】浅色/深色共用 CSS 变量，调色时保持文字与背景的对比。 */
+:root {
+  color-scheme:light;
+  --blue:#2563eb;
+  --green:#16a34a;
+  --ink:#172033;
+  --muted:#64748b;
+  --line:#e2e8f0;
+  --bg:#f6f8fc;
+  --surface:#fff;
+  --control-border:#cbd5e1;
+  --track:#e5e7eb;
+  --primary:#2563eb;
+  --on-primary:#fff;
+  --accent:#1d4ed8;
+  --tab-bg:#e7efff;
+  --tab-border:#bfdbfe;
+  --danger:#b91c1c;
+  --success:#166534;
+  --secondary:#334155;
+  --done-bg:#ecfdf5;
+  --done-border:#bbf7d0;
+  --bar:#3b82f6;
+  --shadow:0 4px 18px #1e293b0b
+}
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --blue:#8ab4f8;
+  --green:#66dc91;
+  --ink:#f5f5f5;
+  --muted:#b8b8b8;
+  --line:#484848;
+  --bg:#111111;
+  --surface:#262626;
+  --control-border:#686868;
+  --track:#414141;
+  --accent:#ededed;
+  --tab-bg:#363636;
+  --tab-border:#858585;
+  --danger:#ff9999;
+  --success:#7be09e;
+  --secondary:#dedede;
+  --done-bg:#262626;
+  --done-border:#484848;
+  --bar:#76a9fa;
+  --shadow:0 3px 10px #00000030
+}
+:root {
+  --study-label:#1d4ed8;
+  --review-bar:#ef4444;
+  --review-label:#b91c1c
+}
+:root[data-theme="dark"] {
+  --study-label:#8ab4f8;
+  --review-bar:#f87171;
+  --review-label:#fca5a5
+}
+/* 固定顶部的关键：整页占满视口，dashboard 不收缩，只有 .panel 滚动。 */
+* {
+  box-sizing:border-box
+}
+[hidden] {
+  display:none!important
+}
+html,body {
+  height:100%;
+  overflow:hidden
+}
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif
+}
+main {
+  max-width:1180px;
+  height:100vh;
+  height:100dvh;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  margin:0 auto;
+  padding:18px 18px 0
+}
+.dashboard {
+  flex:0 0 auto;
+  min-width:0;
+  background:var(--bg);
+  border-bottom:1px solid var(--line);
+  padding-bottom:6px
+}
+h1 {
+  margin:0 0 5px;
+  font-size:25px;
+  letter-spacing:.2px
+}
+.sub {
+  color:var(--muted);
+  font-size:12px
+}
+.sub a,a {
+  color:var(--blue)
+}
+/* 顶部统计卡片及按实际时长计算的进度条。 */
+.stats {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0 10px
+}
+.card {
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:12px 14px;
+  box-shadow:var(--shadow)
+}
+.label {
+  color:var(--muted);
+  font-size:12px
+}
+.value {
+  font-size:25px;
+  font-weight:750;
+  margin-top:2px;
+  font-variant-numeric:tabular-nums
+}
+#vHours,#previewHours {
+  font-size:clamp(16px,1.65vw,21px)
+}
+.progress {
+  height:9px;
+  border-radius:99px;
+  background:var(--track);
+  overflow:hidden;
+  margin:8px 0 12px
+}
+.progress>i {
+  display:block;
+  height:100%;
+  width:0;
+  background:linear-gradient(90deg,var(--blue),#22c55e);
+  transition:width .2s
+}
+/* 通用表单、键盘焦点、选项卡与主题按钮。 */
+button,input,select {
+  font:inherit;
+  color:inherit
+}
+button,input:not([type=checkbox]),select {
+  height:37px;
+  max-width:100%;
+  min-width:0;
+  border:1px solid var(--control-border);
+  border-radius:8px;
+  background:var(--surface);
+  padding:0 10px
+}
+input::placeholder {
+  color:var(--muted);
+  opacity:1
+}
+button {
+  cursor:pointer
+}
+button:hover {
+  border-color:var(--blue)
+}
+button.primary {
+  background:var(--primary);
+  border-color:var(--primary);
+  color:var(--on-primary)
+}
+button.danger {
+  color:var(--danger)
+}
+:focus-visible {
+  outline:2px solid var(--blue);
+  outline-offset:2px
+}
+.view-toolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:12px 0 10px
+}
+.theme-toggle {
+  flex:0 0 auto;
+  white-space:nowrap
+}
+.tabs {
+  display:flex;
+  gap:7px;
+  margin:0
+}
+.tabs button {
+  border-color:transparent;
+  background:transparent;
+  color:var(--muted);
+  font-weight:600
+}
+.tabs button[aria-selected=true] {
+  background:var(--tab-bg);
+  color:var(--accent);
+  border-color:var(--tab-border)
+}
+/* 每日录入表单、保存反馈、未学习日期与复习的显示开关。 */
+.entry-form {
+  display:grid;
+  grid-template-columns:180px minmax(0,1fr) auto auto;
+  gap:9px;
+  align-items:end
+}
+.field {
+  display:flex;
+  min-width:0;
+  flex-direction:column;
+  gap:3px
+}
+.field>span {
+  font-size:12px;
+  color:var(--muted)
+}
+.field input {
+  width:100%
+}
+.note {
+  color:var(--muted);
+  font-size:12px;
+  margin:6px 0 3px
+}
+.preview {
+  min-height:18px;
+  font-size:12px;
+  color:var(--accent);
+  margin-top:5px
+}
+.preview.error {
+  color:var(--danger)
+}
+.message {
+  font-size:12px;
+  margin-top:5px;
+  color:var(--success)
+}
+.message.error {
+  color:var(--danger)
+}
+.day-filter {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:3px 12px;
+  margin-top:6px;
+  padding-top:5px;
+  border-top:1px solid var(--line)
+}
+.day-filter-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  flex:0 0 auto;
+  height:27px;
+  padding:0;
+  border:0;
+  background:transparent;
+  font-size:12px
+}
+.day-filter .note {
+  margin:0
+}
+.day-filter .note.error {
+  color:var(--danger)
+}
+.switch-track {
+  display:block;
+  position:relative;
+  width:32px;
+  height:18px;
+  border:1px solid var(--control-border);
+  border-radius:99px;
+  background:var(--track)
+}
+.switch-track::after {
+  content:"";
+  position:absolute;
+  left:2px;
+  top:2px;
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  background:var(--on-primary)
+}
+.day-filter-toggle[aria-checked=true] .switch-track {
+  background:var(--primary);
+  border-color:var(--primary)
+}
+.day-filter-toggle[aria-checked=true] .switch-track::after {
+  transform:translateX(14px)
+}
+#showReview[aria-checked=true] .switch-track {
+  background:var(--review-bar);
+  border-color:var(--review-bar)
+}
+/* 分集预览的搜索、阶段筛选、进度跳转与独立滚动列表。 */
+.toolbar {
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap
+}
+.toolbar input {
+  flex:1 1 180px
+}
+.position {
+  font-weight:600;
+  color:var(--secondary)
+}
+.toolbar button:disabled {
+  opacity:.5;
+  cursor:not-allowed
+}
+.panel {
+  flex:1 1 0;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:12px 8px 24px 0;
+  scrollbar-gutter:stable;
+  overscroll-behavior:contain;
+  scroll-padding:12px
+}
+.panel:focus-visible {
+  outline-offset:-2px
+}
+.list {
+  display:grid;
+  align-content:start;
+  gap:8px
+}
+/* 每日记录与原生 SVG 柱状图；overflow:hidden 防止横向滚动。 */
+.daily-summary {
+  margin:0 0 10px;
+  color:var(--muted);
+  font-size:13px
+}
+.daily-records {
+  display:grid;
+  gap:9px
+}
+.chart-card {
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:14px 14px 10px;
+  margin-bottom:14px;
+  min-width:0
+}
+.chart-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px
+}
+.chart-heading h2 {
+  font-size:16px;
+  margin:0
+}
+.chart-heading span,.chart-note {
+  font-size:11px;
+  color:var(--muted)
+}
+.chart-note {
+  margin:4px 0 8px
+}
+.chart-note:last-child {
+  margin:6px 0 0
+}
+.chart-legend {
+  display:flex;
+  gap:7px 18px;
+  flex-wrap:wrap;
+  margin:7px 0;
+  font-size:12px
+}
+.chart-legend>span {
+  display:inline-flex;
+  align-items:center;
+  gap:6px
+}
+.legend-swatch {
+  width:10px;
+  height:10px;
+  border-radius:2px;
+  background:var(--bar)
+}
+.legend-swatch.review {
+  background:var(--review-bar)
+}
+.chart-scroll {
+  overflow:hidden;
+  min-width:0;
+  min-height:240px
+}
+.chart-scroll svg {
+  display:block;
+  max-width:100%
+}
+.chart-scroll .empty {
+  border:0;
+  min-height:240px;
+  display:grid;
+  place-items:center;
+  padding:35px 14px
+}
+.chart-hit {
+  fill:transparent;
+  pointer-events:all;
+  cursor:crosshair
+}
+.chart-day:hover .chart-hit,.chart-day:focus-within .chart-hit {
+  fill:var(--track);
+  opacity:.35
+}
+.chart-detail {
+  min-height:18px;
+  color:var(--ink)
+}
+/* 蓝色为首次学习，红色为跨天复习；柱顶字由 JS 动画设置字号。 */
+.chart-axis {
+  fill:var(--muted);
+  font-size:11px
+}
+.chart-grid {
+  stroke:var(--line);
+  stroke-width:1
+}
+.chart-value,.review-value {
+  font-size:11px;
+  font-weight:600;
+  font-variant-numeric:tabular-nums
+}
+.chart-value {
+  fill:var(--study-label)
+}
+.review-value {
+  fill:var(--review-label)
+}
+.chart-value,.review-value {
+  paint-order:stroke;
+  stroke:var(--surface);
+  stroke-width:2.5px;
+  stroke-linejoin:round
+}
+.study-bar,.study-bar-exit {
+  fill:var(--bar);
+  rx:2
+}
+.review-bar,.review-bar-exit {
+  fill:var(--review-bar);
+  rx:2
+}
+.study-bar-exit,.review-bar-exit {
+  pointer-events:none
+}
+.study-bar:hover,.study-bar:focus,.review-bar:hover,.review-bar:focus {
+  outline:none;
+  stroke:var(--ink);
+  stroke-width:2
+}
+@media(prefers-reduced-motion:reduce) {
+  .progress>i {
+    transition:none
+  }
+}
+.records-title {
+  font-size:15px;
+  margin:4px 0 9px
+}
+/* 日期、分集范围、集数、分钟数及修改/删除按钮。 */
+.daily-record {
+  display:grid;
+  grid-template-columns:112px minmax(0,1fr) 64px 100px 112px;
+  gap:12px;
+  align-items:center;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:13px 14px
+}
+.daily-record time {
+  font-weight:700
+}
+.record-episodes {
+  min-width:0;
+  overflow-wrap:anywhere
+}
+.record-count,.record-minutes {
+  font-variant-numeric:tabular-nums
+}
+.record-actions {
+  display:flex;
+  gap:6px
+}
+.record-actions button {
+  height:31px;
+  padding:0 8px;
+  font-size:12px
+}
+.record-caption {
+  font-size:11px;
+  color:var(--muted)
+}
+.daily-record.unrecorded {
+  border-style:dashed;
+  color:var(--muted)
+}
+.chart-day-labels.unrecorded .chart-value {
+  fill:var(--muted)
+}
+/* done 表示预览前缀中的分集；current 标记当前选中的最后一集。 */
+.row {
+  display:grid;
+  grid-template-columns:24px 38px minmax(160px,1fr) 205px 82px 87px;
+  gap:9px;
+  align-items:center;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:11px;
+  padding:10px 12px;
+  cursor:pointer
+}
+.row.done {
+  background:var(--done-bg);
+  border-color:var(--done-border)
+}
+.row.current {
+  border-color:var(--green);
+  box-shadow:inset 3px 0 var(--green)
+}
+.row .title {
+  height:auto;
+  max-width:100%;
+  min-width:0;
+  text-align:left;
+  font-weight:600;
+  padding:0;
+  background:none;
+  border:0;
+  border-radius:2px
+}
+.row .title:hover {
+  color:var(--blue)
+}
+.row .stage {
+  color:var(--muted);
+  font-size:12px
+}
+.row .duration {
+  font-variant-numeric:tabular-nums;
+  color:var(--secondary);
+  font-size:12px
+}
+.row .open {
+  text-decoration:none;
+  white-space:nowrap;
+  font-size:12px
+}
+.check {
+  width:19px;
+  height:19px;
+  margin:0;
+  accent-color:var(--green);
+  cursor:pointer
+}
+.empty {
+  text-align:center;
+  padding:30px 18px;
+  color:var(--muted);
+  background:var(--surface);
+  border:1px dashed var(--line);
+  border-radius:12px
+}
+.empty strong {
+  display:block;
+  color:var(--ink);
+  font-size:16px;
+  margin-bottom:5px
+}
+/* 深色主题采用中性灰背景，操作、学习与复习保留各自的颜色。 */
+:root[data-theme="dark"] input:not([type=checkbox]),:root[data-theme="dark"] select {
+  background:#181818
+}
+:root[data-theme="dark"] .progress>i {
+  background:var(--green)
+}
+:root[data-theme="dark"] #vPct,:root[data-theme="dark"] #previewPct {
+  color:var(--green)
+}
+:root[data-theme="dark"] .row.done {
+  box-shadow:inset 3px 0 var(--green)
+}
+:root[data-theme="dark"] .row.current,:root[data-theme="dark"] .row:hover {
+  background:#333333
+}
+/* 自适应布局：中等宽度重排明细，窄屏压缩表单，矮窗口减少头部高度。 */
+@media(max-width:900px) {
+  .row {
+    grid-template-columns:24px 34px minmax(0,1fr) 80px
+  }
+  .row .stage {
+    grid-column:3;
+    grid-row:2
+  }
+  .row .open {
+    grid-column:4;
+    grid-row:2
+  }
+  .row .duration {
+    grid-column:4;
+    grid-row:1
+  }
+  .daily-record {
+    grid-template-columns:104px minmax(0,1fr) 62px 90px
+  }
+  .record-actions {
+    grid-column:2/-1;
+    justify-content:flex-end
+  }
+  .entry-form {
+    grid-template-columns:160px minmax(0,1fr) auto auto
+  }
+  .card {
+    padding:10px
+  }
+  .value {
+    font-size:22px
+  }
+}
+@media(max-width:600px) {
+  main {
+    padding:12px 12px 0
+  }
+  h1 {
+    font-size:19px;
+    line-height:1.35
+  }
+  .sub {
+    font-size:11px
+  }
+  .stats {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+    margin:10px 0 8px
+  }
+  .card {
+    padding:8px
+  }
+  .label {
+    font-size:11px
+  }
+  .value {
+    font-size:20px
+  }
+  .progress {
+    margin:7px 0 9px
+  }
+  .view-toolbar {
+    margin-bottom:8px
+  }
+  .tabs button,.theme-toggle {
+    height:34px;
+    padding:0 8px;
+    font-size:12px
+  }
+  .entry-form {
+    grid-template-columns:140px minmax(0,1fr);
+    gap:6px
+  }
+  .entry-form>button {
+    width:100%
+  }
+  .field>span {
+    font-size:11px
+  }
+  .entry-form input,.entry-form button,.toolbar input,.toolbar select,.toolbar button {
+    height:33px;
+    font-size:12px;
+    padding:0 7px
+  }
+  .note {
+    font-size:11px
+  }
+  .preview,.message {
+    font-size:11px
+  }
+  .toolbar {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px
+  }
+  .toolbar input {
+    grid-column:1/-1
+  }
+  .toolbar #clearPosition {
+    grid-column:1/-1
+  }
+  .toolbar>* {
+    width:100%
+  }
+  .row {
+    grid-template-columns:22px 29px minmax(0,1fr) 78px;
+    gap:6px;
+    padding:9px 8px
+  }
+  .row .title {
+    overflow-wrap:anywhere;
+    font-size:13px
+  }
+  .panel {
+    padding-right:4px
+  }
+  .daily-record {
+    grid-template-columns:1fr auto;
+    gap:7px 10px;
+    padding:11px
+  }
+  .record-episodes {
+    grid-column:1/-1;
+    grid-row:2
+  }
+  .record-count {
+    grid-column:1;
+    grid-row:3
+  }
+  .record-minutes {
+    grid-column:2;
+    grid-row:3;
+    text-align:right
+  }
+  .record-actions {
+    grid-column:2;
+    grid-row:1
+  }
+  .daily-summary {
+    font-size:12px
+  }
+}
+@media(max-height:650px) {
+  main {
+    padding-top:7px
+  }
+  h1 {
+    font-size:17px;
+    line-height:1.3
+  }
+  .sub {
+    font-size:11px
+  }
+  .stats {
+    gap:6px;
+    margin:7px 0
+  }
+  .card {
+    padding:5px 8px
+  }
+  .label {
+    font-size:10px
+  }
+  .value {
+    font-size:18px
+  }
+  #vHours,#previewHours {
+    font-size:15px
+  }
+  .progress {
+    height:6px;
+    margin:5px 0 7px
+  }
+  .view-toolbar {
+    margin-bottom:6px
+  }
+  .tabs button,.theme-toggle {
+    height:28px;
+    font-size:12px
+  }
+  .entry-form input,.entry-form button,.toolbar input,.toolbar select,.toolbar button {
+    height:29px;
+    font-size:12px
+  }
+  .field>span {
+    font-size:10px
+  }
+  .entry-form {
+    gap:6px
+  }
+  .note,.preview,.message {
+    font-size:10px;
+    margin-top:3px
+  }
+  .dashboard {
+    padding-bottom:3px
+  }
+}
+@media(max-height:650px) and (min-width:601px) {
+  .stats {
+    grid-template-columns:repeat(4,minmax(0,1fr))
+  }
+  .entry-form {
+    grid-template-columns:145px minmax(0,1fr) auto auto
+  }
+}
+@media(max-width:600px) {
+  .toolbar #clearPosition {
+    grid-column:auto
+  }
+}
+</style>
+</head>
+<body><main>
+<!-- 【页面结构】头部位于滚动面板之外，切换功能时仍固定可见。 -->
+<header class="dashboard">
+<h1 id="heading"></h1><div class="sub" id="subtitle"></div>
+<div class="view-toolbar">
+<div class="tabs" role="tablist" aria-label="统计与预览功能切换">
+ <button id="dailyTab" type="button" role="tab" aria-selected="true" aria-controls="dailyPanel">学习统计</button>
+ <button id="browseTab" type="button" role="tab" aria-selected="false" aria-controls="list" tabindex="-1">分集预览</button>
+</div>
+<button id="themeToggle" class="theme-toggle" type="button" aria-label="切换到深色主题">切换深色</button>
+</div>
+<div class="message error" id="themeNotice" role="status" hidden></div>
+<!-- 手动统计头部：数据只来自明确保存的每日记录。 -->
+<div id="dailyHeader">
+<section class="stats" aria-label="手动记录统计">
+ <div class="card"><div class="label">已学集数 / 总集数</div><div class="value" id="vDone"></div></div>
+ <div class="card"><div class="label">完成比例（按时长）</div><div class="value" id="vPct"></div></div>
+ <div class="card"><div class="label">已学分钟 / 总分钟</div><div class="value" id="vHours"></div></div>
+ <div class="card"><div class="label">剩余集数</div><div class="value" id="vLeft"></div></div>
+</section>
+<div class="progress" role="progressbar" aria-label="手动记录的课程完成比例" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i id="progressFill"></i></div>
+<div id="dailyControls">
+ <form class="entry-form" id="recordForm" novalidate>
+  <label class="field"><span>学习日期</span><input id="recordDate" type="date" required></label>
+  <label class="field"><span id="episodeRangeLabel">学习分集</span><input id="recordEpisodes" type="text" required autocomplete="off" placeholder="例如 1-10, 15" aria-describedby="entryPreview"></label>
+  <button class="primary" id="saveRecord" type="submit">保存当天记录</button>
+  <button id="clearForm" type="button">清空输入</button>
+ </form>
+ <div class="preview" id="entryPreview" aria-live="polite" hidden></div>
+ <div class="day-filter">
+  <button id="hideIdleDays" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="过滤未学习日期" aria-controls="dailyChart dailyRecords" aria-describedby="dayFilterHint"><span class="switch-track" aria-hidden="true"></span><span>过滤未学习日期</span></button>
+  <button id="showReview" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="显示跨天复习" aria-controls="dailyChart" aria-describedby="reviewDisplayHint"><span class="switch-track" aria-hidden="true"></span><span>显示跨天复习</span></button>
+  <span class="note" id="dayFilterHint" hidden></span>
+ </div>
+</div>
+<div class="message" id="message" role="status" aria-live="polite" hidden></div>
+</div>
+<!-- 预览头部：显示假设学到某一分集的累计量，与每日统计分别计算。 -->
+<div id="browseControls" hidden>
+ <section class="stats" id="previewStats" aria-label="学习量预览，不计入统计">
+  <div class="card"><div class="label">累计集数 / 总集数</div><div class="value" id="previewDone"></div></div>
+  <div class="card"><div class="label">完成比例（按时长）</div><div class="value" id="previewPct"></div></div>
+  <div class="card"><div class="label">累计分钟 / 总分钟</div><div class="value" id="previewHours"></div></div>
+  <div class="card"><div class="label">剩余集数</div><div class="value" id="previewLeft"></div></div>
+ </section>
+ <div class="progress" role="progressbar" aria-label="假设学完所选分集的课程完成比例预览" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="previewProgressBar"><i id="previewProgressFill"></i></div>
+ <div class="toolbar">
+  <input id="search" type="search" placeholder="搜索标题或分集编号" aria-label="搜索标题或分集编号">
+  <select id="stage" aria-label="筛选阶段"></select>
+  <select id="status" aria-label="筛选勾选状态"><option value="">全部勾选状态</option><option value="0">未勾选</option><option value="1">已勾选</option></select>
+  <button id="jumpToPosition" type="button" aria-controls="list" disabled>跳转到当前进度</button>
+  <button id="clearPosition" type="button">清空勾选位置</button>
+ </div>
+ <div class="note"><span class="position" id="positionLabel"></span> · 点选分集，预览从第 1 集学到此处的累计量；不计入统计。</div>
+ <div class="message" id="browseMessage" role="status" aria-live="polite" hidden></div>
+</div>
+</header>
+<!-- 统计内容区：日汇总、柱状图、每日记录在此上下滚动。 -->
+<section class="panel" id="dailyPanel" tabindex="0" role="tabpanel" aria-labelledby="dailyTab">
+ <p class="daily-summary" id="dailySummary"></p>
+ <section class="chart-card" aria-labelledby="chartTitle">
+  <div class="chart-heading"><h2 id="chartTitle">每日学习量</h2><span>单位：分钟</span></div>
+  <div class="chart-legend" aria-label="柱状图图例"><span><i class="legend-swatch" aria-hidden="true"></i>首次学习</span><span><i class="legend-swatch review" aria-hidden="true"></i><span id="reviewLegend">跨天复习</span></span></div>
+  <p class="chart-note" id="reviewDisplayHint"></p>
+  <div class="chart-scroll" id="dailyChart" tabindex="0" role="region" aria-label="每日学习分钟柱状图"></div>
+  <p class="chart-note chart-detail" id="chartDetail" aria-live="polite">悬停或点击柱子查看详情。</p>
+ </section>
+ <h2 class="records-title">每日记录</h2><div class="daily-records" id="dailyRecords"></div>
+</section>
+<!-- 分集内容由 renderList() 动态生成，DOM 中的 ID 与脚本保持一致。 -->
+<section class="panel list" id="list" tabindex="0" role="tabpanel" aria-labelledby="browseTab" hidden></section>
+</main>
+<script>
+/*
+【分集数据 BASE】顺序就是 P 编号，必须至少有一集。
+title：分集标题；duration：mm:ss（也支持 hh:mm:ss）；stage：阶段名称。
+保留原始时长，计算时转为秒，只在展示时四舍五入到一位小数分钟。
+示例：{ "title": "01 课程介绍", "duration": "03:35", "stage": "基础入门" }
+下面保留完整参考课程，便于直接使用或逐阶段替换。
+*/
+const BASE = [
+ // 第1阶段：C++基础入门（P1～P71）
+ {"title":"01 课程安排","duration":"03:35","stage":"第1阶段：C++基础入门"},
+ {"title":"02 第一个C程序-C书写HelloWorld","duration":"09:26","stage":"第1阶段：C++基础入门"},
+ {"title":"03 程序的注释-单行注释和多行注释","duration":"06:08","stage":"第1阶段：C++基础入门"},
+ {"title":"04 变量-变量的使用-变量的意义","duration":"05:18","stage":"第1阶段：C++基础入门"},
+ {"title":"05 常量-常量与变量的区别-常量的使用","duration":"07:58","stage":"第1阶段：C++基础入门"},
+ {"title":"06 关键字-C++常用的编程关键字","duration":"03:44","stage":"第1阶段：C++基础入门"},
+ {"title":"07 标识符命名规则","duration":"09:01","stage":"第1阶段：C++基础入门"},
+ {"title":"08 数据类型-整型","duration":"11:12","stage":"第1阶段：C++基础入门"},
+ {"title":"09 数据类型-sizeof关键字","duration":"06:55","stage":"第1阶段：C++基础入门"},
+ {"title":"10 数据类型-实型","duration":"12:00","stage":"第1阶段：C++基础入门"},
+ {"title":"11 数据类型-字符型","duration":"10:34","stage":"第1阶段：C++基础入门"},
+ {"title":"12 数据类型-转义字符","duration":"07:29","stage":"第1阶段：C++基础入门"},
+ {"title":"13 数据类型-字符串类型","duration":"07:36","stage":"第1阶段：C++基础入门"},
+ {"title":"14 数据类型-布尔类型","duration":"04:07","stage":"第1阶段：C++基础入门"},
+ {"title":"15 数据类型-数据的输入","duration":"10:43","stage":"第1阶段：C++基础入门"},
+ {"title":"16 运算符-算术运算符-加减乘除运算","duration":"10:57","stage":"第1阶段：C++基础入门"},
+ {"title":"17 运算符-算术运算符-取模运算","duration":"07:38","stage":"第1阶段：C++基础入门"},
+ {"title":"18 运算符-算术运算符-递增递减","duration":"07:15","stage":"第1阶段：C++基础入门"},
+ {"title":"19 运算符-赋值运算符","duration":"06:14","stage":"第1阶段：C++基础入门"},
+ {"title":"20 运算符-比较运算符","duration":"05:49","stage":"第1阶段：C++基础入门"},
+ {"title":"21 运算符-逻辑运算符-非","duration":"04:27","stage":"第1阶段：C++基础入门"},
+ {"title":"22 运算符-逻辑运算符-与","duration":"04:43","stage":"第1阶段：C++基础入门"},
+ {"title":"23 运算符-逻辑运算符-或","duration":"04:58","stage":"第1阶段：C++基础入门"},
+ {"title":"24 程序流程结构-选择结构-单行if语句","duration":"10:42","stage":"第1阶段：C++基础入门"},
+ {"title":"25 程序流程结构-选择结构-多行if语句","duration":"07:29","stage":"第1阶段：C++基础入门"},
+ {"title":"26 程序流程结构-选择结构-多条件if语句","duration":"11:40","stage":"第1阶段：C++基础入门"},
+ {"title":"27 程序流程结构-选择结构-嵌套if语句","duration":"10:03","stage":"第1阶段：C++基础入门"},
+ {"title":"28 程序流程结构-选择结构案例-三只小猪称体重","duration":"10:26","stage":"第1阶段：C++基础入门"},
+ {"title":"29 程序流程结构-选择结构案例-三目运算符","duration":"06:32","stage":"第1阶段：C++基础入门"},
+ {"title":"30 程序流程结构-选择结构-switch语句","duration":"16:03","stage":"第1阶段：C++基础入门"},
+ {"title":"31 程序流程结构-循环结构-while语句","duration":"09:24","stage":"第1阶段：C++基础入门"},
+ {"title":"32 程序流程结构-循环结构案例-猜数字","duration":"13:53","stage":"第1阶段：C++基础入门"},
+ {"title":"33 程序流程结构-循环结构-dowhile语句","duration":"06:47","stage":"第1阶段：C++基础入门"},
+ {"title":"34 程序流程结构-循环结构案例-水仙花数","duration":"12:35","stage":"第1阶段：C++基础入门"},
+ {"title":"35 程序流程结构-循环结构-for循环","duration":"07:18","stage":"第1阶段：C++基础入门"},
+ {"title":"36 程序流程结构-循环结构案例-敲桌子","duration":"11:25","stage":"第1阶段：C++基础入门"},
+ {"title":"37 程序流程结构-嵌套循环","duration":"07:45","stage":"第1阶段：C++基础入门"},
+ {"title":"38 程序流程结构-嵌套循环案例-乘法口诀表","duration":"09:38","stage":"第1阶段：C++基础入门"},
+ {"title":"39 程序流程结构-跳转语句-break语句","duration":"12:21","stage":"第1阶段：C++基础入门"},
+ {"title":"40 程序流程结构-跳转语句-continue","duration":"08:39","stage":"第1阶段：C++基础入门"},
+ {"title":"41 程序流程结构-跳转语句-goto","duration":"05:24","stage":"第1阶段：C++基础入门"},
+ {"title":"42 数组-一维数组定义方式","duration":"18:14","stage":"第1阶段：C++基础入门"},
+ {"title":"43 数组-一维数组-数组名","duration":"14:27","stage":"第1阶段：C++基础入门"},
+ {"title":"44 数组-一维数组案例-五只小猪称体重","duration":"09:04","stage":"第1阶段：C++基础入门"},
+ {"title":"45 数组-一维数组案例-元素逆置","duration":"14:01","stage":"第1阶段：C++基础入门"},
+ {"title":"46 数组-一维数组-冒泡排序","duration":"18:58","stage":"第1阶段：C++基础入门"},
+ {"title":"47 数组-二维数组定义方式","duration":"14:31","stage":"第1阶段：C++基础入门"},
+ {"title":"48 数组-二维数组-数组名","duration":"14:08","stage":"第1阶段：C++基础入门"},
+ {"title":"49 数组-二维数组案例-考试成绩统计","duration":"10:21","stage":"第1阶段：C++基础入门"},
+ {"title":"50 函数-函数的定义","duration":"11:21","stage":"第1阶段：C++基础入门"},
+ {"title":"51 函数-函数的调用","duration":"07:45","stage":"第1阶段：C++基础入门"},
+ {"title":"52 函数-值传递","duration":"11:55","stage":"第1阶段：C++基础入门"},
+ {"title":"53 函数-常见的样式","duration":"08:58","stage":"第1阶段：C++基础入门"},
+ {"title":"54 函数-函数的声明","duration":"08:25","stage":"第1阶段：C++基础入门"},
+ {"title":"55 函数-函数的分文件编写","duration":"09:50","stage":"第1阶段：C++基础入门"},
+ {"title":"56 指针-指针的定义和使用","duration":"10:12","stage":"第1阶段：C++基础入门"},
+ {"title":"57 指针-指针所占内存空间","duration":"06:23","stage":"第1阶段：C++基础入门"},
+ {"title":"58 指针-空指针","duration":"04:33","stage":"第1阶段：C++基础入门"},
+ {"title":"59 指针-野指针","duration":"03:17","stage":"第1阶段：C++基础入门"},
+ {"title":"60 指针-const修饰指针","duration":"15:06","stage":"第1阶段：C++基础入门"},
+ {"title":"61 指针-指针和数组","duration":"07:28","stage":"第1阶段：C++基础入门"},
+ {"title":"62 指针-指针和函数","duration":"11:24","stage":"第1阶段：C++基础入门"},
+ {"title":"63 指针-指针配合数组和函数案例","duration":"08:38","stage":"第1阶段：C++基础入门"},
+ {"title":"64 结构体-结构体定义和使用","duration":"14:28","stage":"第1阶段：C++基础入门"},
+ {"title":"65 结构体-结构体数组","duration":"08:11","stage":"第1阶段：C++基础入门"},
+ {"title":"66 结构体-结构体指针","duration":"06:29","stage":"第1阶段：C++基础入门"},
+ {"title":"67 结构体-结构体嵌套结构体","duration":"09:29","stage":"第1阶段：C++基础入门"},
+ {"title":"68 结构体-结构体做函数参数","duration":"10:58","stage":"第1阶段：C++基础入门"},
+ {"title":"69 结构体-结构体中const使用场景","duration":"11:18","stage":"第1阶段：C++基础入门"},
+ {"title":"70 结构体-结构体案例1","duration":"20:37","stage":"第1阶段：C++基础入门"},
+ {"title":"71 结构体-结构体案例2","duration":"12:54","stage":"第1阶段：C++基础入门"},
+ // 第2阶段：通讯录管理系统（P72～P83）
+ {"title":"01 通讯录管理系统-系统功能介绍及展示","duration":"06:45","stage":"第2阶段：通讯录管理系统"},
+ {"title":"02 通讯录管理系统-创建项目","duration":"02:50","stage":"第2阶段：通讯录管理系统"},
+ {"title":"03 通讯录管理系统-菜单功能","duration":"06:04","stage":"第2阶段：通讯录管理系统"},
+ {"title":"04 通讯录管理系统-退出功能实现","duration":"08:16","stage":"第2阶段：通讯录管理系统"},
+ {"title":"05 通讯录管理系统-添加联系人-结构体设计","duration":"08:48","stage":"第2阶段：通讯录管理系统"},
+ {"title":"06 通讯录管理系统-添加联系人-功能实现","duration":"17:48","stage":"第2阶段：通讯录管理系统"},
+ {"title":"07 通讯录管理系统-显示联系人","duration":"10:27","stage":"第2阶段：通讯录管理系统"},
+ {"title":"08 通讯录管理系统-删除联系人-检测联系人是否存在","duration":"09:50","stage":"第2阶段：通讯录管理系统"},
+ {"title":"09 通讯录管理系统-删除联系人-功能实现","duration":"11:32","stage":"第2阶段：通讯录管理系统"},
+ {"title":"10 通讯录管理系统-查找联系人","duration":"08:37","stage":"第2阶段：通讯录管理系统"},
+ {"title":"11 通讯录管理系统-修改联系人","duration":"12:27","stage":"第2阶段：通讯录管理系统"},
+ {"title":"12 通讯录管理系统-清空通讯录","duration":"06:15","stage":"第2阶段：通讯录管理系统"},
+ // 第3阶段：C++核心编程（P84～P146）
+ {"title":"01 程序的内存模型-内存四区-代码区.","duration":"08:56","stage":"第3阶段：C++核心编程"},
+ {"title":"02 程序的内存模型-内存四区-全局区","duration":"17:09","stage":"第3阶段：C++核心编程"},
+ {"title":"03 程序的内存模型-内存四区-栈区","duration":"08:15","stage":"第3阶段：C++核心编程"},
+ {"title":"04 程序的内存模型-内存四区-堆区","duration":"07:46","stage":"第3阶段：C++核心编程"},
+ {"title":"05 程序的内存模型-new运算符","duration":"10:41","stage":"第3阶段：C++核心编程"},
+ {"title":"06 C++中的引用-引用的基本语法","duration":"06:13","stage":"第3阶段：C++核心编程"},
+ {"title":"07 C++中的引用-引用的注意事项","duration":"07:40","stage":"第3阶段：C++核心编程"},
+ {"title":"08 C++中的引用-引用做函数参数","duration":"10:26","stage":"第3阶段：C++核心编程"},
+ {"title":"09 C++中的引用-引用做函数返回值","duration":"10:48","stage":"第3阶段：C++核心编程"},
+ {"title":"10 C++中的引用-引用的本质","duration":"07:43","stage":"第3阶段：C++核心编程"},
+ {"title":"11 C++中的引用-常量引用","duration":"09:19","stage":"第3阶段：C++核心编程"},
+ {"title":"12 函数高级-函数的默认参数","duration":"13:17","stage":"第3阶段：C++核心编程"},
+ {"title":"13 函数高级-函数的占位参数","duration":"06:11","stage":"第3阶段：C++核心编程"},
+ {"title":"14 函数高级-函数重载-基本语法","duration":"11:20","stage":"第3阶段：C++核心编程"},
+ {"title":"15 函数高级-函数重载-注意事项","duration":"11:39","stage":"第3阶段：C++核心编程"},
+ {"title":"16 类和对象-封装-属性和行为作为整体","duration":"14:37","stage":"第3阶段：C++核心编程"},
+ {"title":"17 类和对象-封装-案例-设计学生类","duration":"10:29","stage":"第3阶段：C++核心编程"},
+ {"title":"18 类和对象-封装-访问权限","duration":"10:56","stage":"第3阶段：C++核心编程"},
+ {"title":"19 类和对象-封装-c++中class和struct的区别","duration":"05:42","stage":"第3阶段：C++核心编程"},
+ {"title":"20-成员属性设置为私有","duration":"15:52","stage":"第3阶段：C++核心编程"},
+ {"title":"21 类和对象-封装-设计案例1-立方体类","duration":"21:48","stage":"第3阶段：C++核心编程"},
+ {"title":"22 类和对象-封装-设计案例2-点和圆关系","duration":"25:01","stage":"第3阶段：C++核心编程"},
+ {"title":"23 类和对象-对象特性-构造函数和析构函数","duration":"15:57","stage":"第3阶段：C++核心编程"},
+ {"title":"24 类和对象-对象特性-函数的分类以及调用","duration":"25:49","stage":"第3阶段：C++核心编程"},
+ {"title":"25 类和对象-对象特性-拷贝构造函数调用时机","duration":"12:33","stage":"第3阶段：C++核心编程"},
+ {"title":"26 类和对象-对象特性-构造函数调用规则","duration":"13:54","stage":"第3阶段：C++核心编程"},
+ {"title":"27 类和对象-对象特性-深拷贝与浅拷贝","duration":"16:44","stage":"第3阶段：C++核心编程"},
+ {"title":"28 类和对象-对象特性-初始化列表","duration":"07:23","stage":"第3阶段：C++核心编程"},
+ {"title":"29 类和对象-对象特性-类对象作为类成员","duration":"13:24","stage":"第3阶段：C++核心编程"},
+ {"title":"30&31 类和对象-静态成员","duration":"21:17","stage":"第3阶段：C++核心编程"},
+ {"title":"32 类和对象-对象特性-成员变量和成员函数分开存储","duration":"10:39","stage":"第3阶段：C++核心编程"},
+ {"title":"33 类和对象-对象特性-this指针的用途","duration":"15:38","stage":"第3阶段：C++核心编程"},
+ {"title":"34 类和对象-对象特性-空指针访问成员函数","duration":"06:20","stage":"第3阶段：C++核心编程"},
+ {"title":"35 类和对象-对象特性-const修饰成员函数","duration":"12:41","stage":"第3阶段：C++核心编程"},
+ {"title":"36 类和对象-友元-全局函数做友元","duration":"08:44","stage":"第3阶段：C++核心编程"},
+ {"title":"37 类和对象-友元-友元类","duration":"10:29","stage":"第3阶段：C++核心编程"},
+ {"title":"38 类和对象-友元-成员函数做友元","duration":"10:13","stage":"第3阶段：C++核心编程"},
+ {"title":"39 类和对象-C++运算符重载-加号运算符重载","duration":"21:33","stage":"第3阶段：C++核心编程"},
+ {"title":"40 类和对象-C++运算符重载-左移运算符重载","duration":"15:36","stage":"第3阶段：C++核心编程"},
+ {"title":"41 类和对象-C++运算符重载-递增运算符重载","duration":"21:38","stage":"第3阶段：C++核心编程"},
+ {"title":"42 类和对象-C++运算符重载-赋值运算符重载","duration":"17:17","stage":"第3阶段：C++核心编程"},
+ {"title":"43 类和对象-C++运算符重载-关系运算符重载","duration":"08:29","stage":"第3阶段：C++核心编程"},
+ {"title":"44 类和对象-C++运算符重载-函数调用运算符重载","duration":"09:48","stage":"第3阶段：C++核心编程"},
+ {"title":"45 类和对象-继承-基本语法","duration":"17:54","stage":"第3阶段：C++核心编程"},
+ {"title":"46 类和对象-继承-继承方式","duration":"16:28","stage":"第3阶段：C++核心编程"},
+ {"title":"47 类和对象-继承-继承中的对象模型","duration":"12:31","stage":"第3阶段：C++核心编程"},
+ {"title":"48 类和对象-继承-构造和析构顺序","duration":"04:59","stage":"第3阶段：C++核心编程"},
+ {"title":"49 类和对象-继承-同名成员处理","duration":"11:07","stage":"第3阶段：C++核心编程"},
+ {"title":"50 类和对象-继承-同名静态成员处理","duration":"13:01","stage":"第3阶段：C++核心编程"},
+ {"title":"51 类和对象-继承-继承语法","duration":"08:55","stage":"第3阶段：C++核心编程"},
+ {"title":"52 类和对象-继承-菱形继承问题以及解决方法","duration":"19:33","stage":"第3阶段：C++核心编程"},
+ {"title":"53 类和对象-多态-多态的基本语法","duration":"17:00","stage":"第3阶段：C++核心编程"},
+ {"title":"54 类和对象-多态-多态的原理剖析","duration":"18:18","stage":"第3阶段：C++核心编程"},
+ {"title":"55 类和对象-多态-案例1-计算器类","duration":"20:08","stage":"第3阶段：C++核心编程"},
+ {"title":"56 类和对象-多态-纯虚函数和抽象类","duration":"10:26","stage":"第3阶段：C++核心编程"},
+ {"title":"57 类和对象-多态-案例2-制作饮品","duration":"12:30","stage":"第3阶段：C++核心编程"},
+ {"title":"58 类和对象-多态-虚析构和纯虚析构","duration":"17:05","stage":"第3阶段：C++核心编程"},
+ {"title":"59 类和对象-多态-案例3-电脑组装需求分析","duration":"08:46","stage":"第3阶段：C++核心编程"},
+ {"title":"60 类和对象-多态-案例3-电脑组装具体实现","duration":"19:01","stage":"第3阶段：C++核心编程"},
+ {"title":"61 C++文件操作-文本文件-写文件","duration":"16:08","stage":"第3阶段：C++核心编程"},
+ {"title":"62 C++文件操作-文本文件-读文件","duration":"13:34","stage":"第3阶段：C++核心编程"},
+ {"title":"63 C++文件操作-二进制文件-写文件","duration":"07:45","stage":"第3阶段：C++核心编程"},
+ {"title":"64 C++文件操作-二进制文件-读文件","duration":"06:30","stage":"第3阶段：C++核心编程"},
+ // 第4阶段：企业职工管理系统（P147～P166）
+ {"title":"01 职工管理系统-需求分析以及案例展示","duration":"11:17","stage":"第4阶段：企业职工管理系统"},
+ {"title":"02 职工管理系统-创建项目","duration":"03:18","stage":"第4阶段：企业职工管理系统"},
+ {"title":"03 职工管理系统-创建职工管理类","duration":"05:43","stage":"第4阶段：企业职工管理系统"},
+ {"title":"04 职工管理系统-菜单功能实现","duration":"05:27","stage":"第4阶段：企业职工管理系统"},
+ {"title":"05 职工管理系统-退出系统功能实现","duration":"08:58","stage":"第4阶段：企业职工管理系统"},
+ {"title":"06 职工管理系统-职工抽象类和普通员工类实现","duration":"17:14","stage":"第4阶段：企业职工管理系统"},
+ {"title":"07 职工管理系统-经理类和老板类实现","duration":"10:34","stage":"第4阶段：企业职工管理系统"},
+ {"title":"08 职工管理系统-添加职工功能实现","duration":"25:02","stage":"第4阶段：企业职工管理系统"},
+ {"title":"09 职工管理系统-文件交互-写文件","duration":"08:16","stage":"第4阶段：企业职工管理系统"},
+ {"title":"10 职工管理系统-文件交互-读文件1-文件未创建","duration":"07:23","stage":"第4阶段：企业职工管理系统"},
+ {"title":"11 职工管理系统-文件交互-读文件2-文件为空","duration":"06:37","stage":"第4阶段：企业职工管理系统"},
+ {"title":"12 职工管理系统-文件交互-读文件3-统计人数","duration":"05:51","stage":"第4阶段：企业职工管理系统"},
+ {"title":"13 职工管理系统-文件交互-读文件4-初始化完毕","duration":"10:18","stage":"第4阶段：企业职工管理系统"},
+ {"title":"14 职工管理系统-显示职工功能","duration":"08:19","stage":"第4阶段：企业职工管理系统"},
+ {"title":"15 职工管理系统-删除职工-判断职工是否存在","duration":"06:55","stage":"第4阶段：企业职工管理系统"},
+ {"title":"16 职工管理系统-删除职工-功能实现","duration":"10:00","stage":"第4阶段：企业职工管理系统"},
+ {"title":"17 职工管理系统-修改职工功能实现","duration":"13:12","stage":"第4阶段：企业职工管理系统"},
+ {"title":"18 职工管理系统-查找职工功能实现","duration":"14:55","stage":"第4阶段：企业职工管理系统"},
+ {"title":"19 职工管理系统-按照职工编号进行排序功能实现","duration":"14:08","stage":"第4阶段：企业职工管理系统"},
+ {"title":"20 职工管理系统-清空文件实现","duration":"07:52","stage":"第4阶段：企业职工管理系统"},
+ // 第5阶段：C++提高编程（P167～P263）
+ {"title":"01 模板-模板的概念","duration":"04:57","stage":"第5阶段：C++提高编程"},
+ {"title":"02 模板-函数模板基本语法","duration":"16:42","stage":"第5阶段：C++提高编程"},
+ {"title":"03 模板-函数模板注意事项","duration":"09:46","stage":"第5阶段：C++提高编程"},
+ {"title":"04 模板-函数模板案例-数组排序","duration":"12:14","stage":"第5阶段：C++提高编程"},
+ {"title":"05 模板-普通函数与函数模板区别","duration":"09:20","stage":"第5阶段：C++提高编程"},
+ {"title":"06 模板-普通函数与函数模板调用规则","duration":"12:00","stage":"第5阶段：C++提高编程"},
+ {"title":"07 模板-模板的局限性","duration":"12:34","stage":"第5阶段：C++提高编程"},
+ {"title":"08 模板-类模板基本语法","duration":"06:48","stage":"第5阶段：C++提高编程"},
+ {"title":"09 模板-类模板与函数模板区别","duration":"07:50","stage":"第5阶段：C++提高编程"},
+ {"title":"10 模板-类模板中成员函数创建时机","duration":"08:01","stage":"第5阶段：C++提高编程"},
+ {"title":"11 模板-类模板对象做函数参数","duration":"13:41","stage":"第5阶段：C++提高编程"},
+ {"title":"12 模板-类模板与继承","duration":"10:00","stage":"第5阶段：C++提高编程"},
+ {"title":"13 模板-类模板成员函数类外实现","duration":"08:29","stage":"第5阶段：C++提高编程"},
+ {"title":"14 模板-类模板分文件编写","duration":"13:19","stage":"第5阶段：C++提高编程"},
+ {"title":"15 模板-类模板与友元","duration":"12:57","stage":"第5阶段：C++提高编程"},
+ {"title":"16 模板-类模板案例-数组类封装的需求分析","duration":"06:38","stage":"第5阶段：C++提高编程"},
+ {"title":"17 模板-类模板案例-数组类封装（上）","duration":"18:06","stage":"第5阶段：C++提高编程"},
+ {"title":"18 模板-类模板案例-数组类封装（下）","duration":"20:39","stage":"第5阶段：C++提高编程"},
+ {"title":"19 STL初识-STL的基本概念","duration":"17:44","stage":"第5阶段：C++提高编程"},
+ {"title":"20 STL初识-vector存放内置数据类型","duration":"14:13","stage":"第5阶段：C++提高编程"},
+ {"title":"21 STL初识-vector存放自定义数据类型","duration":"10:38","stage":"第5阶段：C++提高编程"},
+ {"title":"22 STL初识-容器嵌套容器","duration":"07:25","stage":"第5阶段：C++提高编程"},
+ {"title":"23 string容器-构造函数","duration":"06:49","stage":"第5阶段：C++提高编程"},
+ {"title":"24 string容器-赋值操作","duration":"07:16","stage":"第5阶段：C++提高编程"},
+ {"title":"25 string容器-字符串拼接","duration":"11:05","stage":"第5阶段：C++提高编程"},
+ {"title":"26 string容器-字符串查找和替换","duration":"10:57","stage":"第5阶段：C++提高编程"},
+ {"title":"27 string容器-字符串比较","duration":"05:13","stage":"第5阶段：C++提高编程"},
+ {"title":"28 string容器-字符存取","duration":"05:33","stage":"第5阶段：C++提高编程"},
+ {"title":"29 string容器-字符串插入和删除","duration":"04:27","stage":"第5阶段：C++提高编程"},
+ {"title":"30 string容器-子串获取","duration":"07:21","stage":"第5阶段：C++提高编程"},
+ {"title":"31 vector容器-构造函数","duration":"12:07","stage":"第5阶段：C++提高编程"},
+ {"title":"32 vector容器-赋值操作","duration":"05:49","stage":"第5阶段：C++提高编程"},
+ {"title":"33 vector容器-容量和大小","duration":"09:27","stage":"第5阶段：C++提高编程"},
+ {"title":"34 vector容器-插入和删除","duration":"08:31","stage":"第5阶段：C++提高编程"},
+ {"title":"35 vector容器-数据存取","duration":"04:49","stage":"第5阶段：C++提高编程"},
+ {"title":"36 vector容器-互换容器","duration":"12:40","stage":"第5阶段：C++提高编程"},
+ {"title":"37 vector容器-预留空间","duration":"06:55","stage":"第5阶段：C++提高编程"},
+ {"title":"38 deque容器-构造函数","duration":"11:45","stage":"第5阶段：C++提高编程"},
+ {"title":"39 deque容器-赋值操作","duration":"04:31","stage":"第5阶段：C++提高编程"},
+ {"title":"40 deque容器-大小操作","duration":"07:10","stage":"第5阶段：C++提高编程"},
+ {"title":"41 deque容器-插入和删除","duration":"13:08","stage":"第5阶段：C++提高编程"},
+ {"title":"42 deque容器-数据存取","duration":"04:26","stage":"第5阶段：C++提高编程"},
+ {"title":"43 deque容器-排序操作","duration":"06:54","stage":"第5阶段：C++提高编程"},
+ {"title":"44 STL案例1-评委打分","duration":"23:35","stage":"第5阶段：C++提高编程"},
+ {"title":"45 stack容器-基本概念","duration":"07:09","stage":"第5阶段：C++提高编程"},
+ {"title":"46 stack容器-常用接口","duration":"06:50","stage":"第5阶段：C++提高编程"},
+ {"title":"47 queue容器-基本概念","duration":"06:42","stage":"第5阶段：C++提高编程"},
+ {"title":"48 queue容器-常用接口","duration":"08:22","stage":"第5阶段：C++提高编程"},
+ {"title":"49 list容器-基本概念","duration":"15:03","stage":"第5阶段：C++提高编程"},
+ {"title":"50 list容器-构造函数","duration":"05:31","stage":"第5阶段：C++提高编程"},
+ {"title":"51 list容器-赋值和交换","duration":"06:47","stage":"第5阶段：C++提高编程"},
+ {"title":"52 list容器-大小操作","duration":"05:25","stage":"第5阶段：C++提高编程"},
+ {"title":"53 list容器-插入和删除","duration":"11:45","stage":"第5阶段：C++提高编程"},
+ {"title":"54 list容器-数据存取","duration":"08:29","stage":"第5阶段：C++提高编程"},
+ {"title":"55 list容器-反转和排序","duration":"12:19","stage":"第5阶段：C++提高编程"},
+ {"title":"56 list容器-排序案例","duration":"12:40","stage":"第5阶段：C++提高编程"},
+ {"title":"57 set容器-构造和赋值","duration":"08:08","stage":"第5阶段：C++提高编程"},
+ {"title":"58 set容器-大小和交换","duration":"06:25","stage":"第5阶段：C++提高编程"},
+ {"title":"59 set容器-插入和删除","duration":"05:53","stage":"第5阶段：C++提高编程"},
+ {"title":"60 set容器-查找和统计","duration":"06:36","stage":"第5阶段：C++提高编程"},
+ {"title":"61 set容器-set和multiset区别","duration":"08:34","stage":"第5阶段：C++提高编程"},
+ {"title":"62 pari使用-pair对组的创建","duration":"04:16","stage":"第5阶段：C++提高编程"},
+ {"title":"63 set容器-内置类型指定排序规则","duration":"08:15","stage":"第5阶段：C++提高编程"},
+ {"title":"64 set容器-自定义数据类型指定排序规则","duration":"06:46","stage":"第5阶段：C++提高编程"},
+ {"title":"65 map容器-构造和赋值","duration":"10:08","stage":"第5阶段：C++提高编程"},
+ {"title":"66 map容器-大小和交换","duration":"07:29","stage":"第5阶段：C++提高编程"},
+ {"title":"67 map容器-插入和删除","duration":"11:19","stage":"第5阶段：C++提高编程"},
+ {"title":"68 map容器-查找和统计","duration":"06:57","stage":"第5阶段：C++提高编程"},
+ {"title":"69 map容器-排序","duration":"07:16","stage":"第5阶段：C++提高编程"},
+ {"title":"70 STL案例2-员工分组","duration":"21:59","stage":"第5阶段：C++提高编程"},
+ {"title":"71 函数对象-函数对象基本使用","duration":"11:07","stage":"第5阶段：C++提高编程"},
+ {"title":"72 谓词-一元谓词","duration":"08:29","stage":"第5阶段：C++提高编程"},
+ {"title":"73 谓词-二元谓词","duration":"06:24","stage":"第5阶段：C++提高编程"},
+ {"title":"74 内建函数对象-算术仿函数","duration":"06:27","stage":"第5阶段：C++提高编程"},
+ {"title":"75 内建函数对象-关系仿函数","duration":"07:09","stage":"第5阶段：C++提高编程"},
+ {"title":"76 内建函数对象-逻辑仿函数","duration":"07:38","stage":"第5阶段：C++提高编程"},
+ {"title":"77 常用遍历算法-for_each","duration":"06:31","stage":"第5阶段：C++提高编程"},
+ {"title":"78 常用遍历算法-transform","duration":"06:17","stage":"第5阶段：C++提高编程"},
+ {"title":"79 常用遍历算法-find","duration":"12:27","stage":"第5阶段：C++提高编程"},
+ {"title":"80 常用查找算法-find_if","duration":"09:57","stage":"第5阶段：C++提高编程"},
+ {"title":"81 常用查找算法-adjacent_find","duration":"04:57","stage":"第5阶段：C++提高编程"},
+ {"title":"82 常用查找算法-binary_search","duration":"05:25","stage":"第5阶段：C++提高编程"},
+ {"title":"83 常用查找算法-count","duration":"10:17","stage":"第5阶段：C++提高编程"},
+ {"title":"84 常用查找算法-count_if","duration":"09:12","stage":"第5阶段：C++提高编程"},
+ {"title":"85 常用排序算法-sort","duration":"05:32","stage":"第5阶段：C++提高编程"},
+ {"title":"86 常用排序算法-random_shuffle","duration":"04:52","stage":"第5阶段：C++提高编程"},
+ {"title":"87 常用排序算法-merge","duration":"05:48","stage":"第5阶段：C++提高编程"},
+ {"title":"88 常用排序算法-reverse","duration":"04:02","stage":"第5阶段：C++提高编程"},
+ {"title":"89 常用拷贝和替换算法-copy","duration":"04:57","stage":"第5阶段：C++提高编程"},
+ {"title":"90 常用拷贝和替换算法-replace","duration":"04:52","stage":"第5阶段：C++提高编程"},
+ {"title":"91 常用拷贝和替换算法-replace_if","duration":"05:58","stage":"第5阶段：C++提高编程"},
+ {"title":"92 常用拷贝和替换算法-swap","duration":"04:19","stage":"第5阶段：C++提高编程"},
+ {"title":"93 常用算术生成算法-accumulate","duration":"05:19","stage":"第5阶段：C++提高编程"},
+ {"title":"94 常用算术生成算法-fill","duration":"03:27","stage":"第5阶段：C++提高编程"},
+ {"title":"95 常用集合算法-set_intersection","duration":"10:27","stage":"第5阶段：C++提高编程"},
+ {"title":"96 常用集合算法-set_union","duration":"07:24","stage":"第5阶段：C++提高编程"},
+ {"title":"97 常用集合算法-set_difference","duration":"10:31","stage":"第5阶段：C++提高编程"},
+ // 第6阶段：演讲比赛流程管理系统（P264～P281）
+ {"title":"01 演讲比赛流程管理系统-比赛需求分析以及成品展示","duration":"08:37","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"02 演讲比赛流程管理系统-项目的创建","duration":"03:20","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"03 演讲比赛流程管理系统-演讲比赛管理类创建","duration":"04:26","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"04 演讲比赛流程管理系统-菜单功能界面搭建","duration":"04:16","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"05 演讲比赛流程管理系统-退出系统功能实现","duration":"06:38","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"06 演讲比赛流程管理系统-选手类创建","duration":"04:31","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"07 演讲比赛流程管理系统-容器的设计以及初始化操作","duration":"07:21","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"08 演讲比赛流程管理系统-创建选手","duration":"09:34","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"09 演讲比赛流程管理系统-抽签功能实现","duration":"10:32","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"10 演讲比赛流程管理系统-比赛功能实现","duration":"31:10","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"11 演讲比赛流程管理系统-显示晋级选手信息","duration":"06:07","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"12 演讲比赛流程管理系统-第二轮比赛流程实现","duration":"03:01","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"13 演讲比赛流程管理系统-保存记录功能实现","duration":"08:33","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"14 演讲比赛流程管理系统-读取记录-获取往届分数","duration":"12:50","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"15 演讲比赛流程管理系统-读取记录-解析文件中的数据","duration":"11:33","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"16 演讲比赛流程管理系统-查看往届记录功能实现","duration":"04:53","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"17 演讲比赛流程管理系统-解决程序中的bug","duration":"11:55","stage":"第6阶段：演讲比赛流程管理系统"},
+ {"title":"18 演讲比赛流程管理系统-清空记录功能实现","duration":"08:07","stage":"第6阶段：演讲比赛流程管理系统"},
+ // 第7阶段：机房预约系统（P282～P314）
+ {"title":"01 机房预约系统-需求分析介绍","duration":"08:04","stage":"第7阶段：机房预约系统"},
+ {"title":"02 机房预约系统-成品展示","duration":"07:34","stage":"第7阶段：机房预约系统"},
+ {"title":"03 机房预约系统-创建项目","duration":"02:44","stage":"第7阶段：机房预约系统"},
+ {"title":"04 机房预约系统-主菜单界面搭建以及提供登录接口","duration":"08:31","stage":"第7阶段：机房预约系统"},
+ {"title":"05 机房预约系统-退出功能实现","duration":"01:57","stage":"第7阶段：机房预约系统"},
+ {"title":"06 机房预约系统-身份的抽象基类创建","duration":"05:31","stage":"第7阶段：机房预约系统"},
+ {"title":"07 机房预约系统-学生类的创建","duration":"08:50","stage":"第7阶段：机房预约系统"},
+ {"title":"08 机房预约系统-教师类创建","duration":"05:35","stage":"第7阶段：机房预约系统"},
+ {"title":"09 机房预约系统-管理员类创建","duration":"07:01","stage":"第7阶段：机房预约系统"},
+ {"title":"10 机房预约系统-全局文件添加","duration":"04:30","stage":"第7阶段：机房预约系统"},
+ {"title":"11 机房预约系统-登录函数接口封装","duration":"14:20","stage":"第7阶段：机房预约系统"},
+ {"title":"12 机房预约系统-学生身份登录实现","duration":"09:16","stage":"第7阶段：机房预约系统"},
+ {"title":"13 机房预约系统-教师身份登录实现","duration":"06:59","stage":"第7阶段：机房预约系统"},
+ {"title":"14 机房预约系统-管理员身份登录实现","duration":"05:28","stage":"第7阶段：机房预约系统"},
+ {"title":"15 机房预约系统-管理员子菜单搭建以及注销实现","duration":"16:17","stage":"第7阶段：机房预约系统"},
+ {"title":"16 机房预约系统-管理员添加账号实现","duration":"13:35","stage":"第7阶段：机房预约系统"},
+ {"title":"17 机房预约系统-获取文件中学生和老师信息","duration":"11:31","stage":"第7阶段：机房预约系统"},
+ {"title":"18 机房预约系统-检测账号重复的功能实现","duration":"13:33","stage":"第7阶段：机房预约系统"},
+ {"title":"19 机房预约系统-解决检测重复账号添加中的bug","duration":"04:46","stage":"第7阶段：机房预约系统"},
+ {"title":"20 机房预约系统-查看账号功能实现","duration":"07:52","stage":"第7阶段：机房预约系统"},
+ {"title":"21 机房预约系统-查看机房信息功能实现","duration":"09:51","stage":"第7阶段：机房预约系统"},
+ {"title":"22 机房预约系统-清空预约功能实现","duration":"03:49","stage":"第7阶段：机房预约系统"},
+ {"title":"23 机房预约系统-学生子菜单搭建以及注销实现","duration":"11:44","stage":"第7阶段：机房预约系统"},
+ {"title":"24 机房预约系统-申请预约功能实现","duration":"17:21","stage":"第7阶段：机房预约系统"},
+ {"title":"25 机房预约系统-预约类的容器属性分析","duration":"08:57","stage":"第7阶段：机房预约系统"},
+ {"title":"26 机房预约系统-预约类中获取所有预约信息","duration":"22:54","stage":"第7阶段：机房预约系统"},
+ {"title":"27 机房预约系统-更新预约记录功能实现","duration":"05:39","stage":"第7阶段：机房预约系统"},
+ {"title":"28 机房预约系统-学生显示自身预约功能实现","duration":"12:55","stage":"第7阶段：机房预约系统"},
+ {"title":"29 机房预约系统-学生显示所有预约功能实现","duration":"09:14","stage":"第7阶段：机房预约系统"},
+ {"title":"30 机房预约系统-学生取消预约功能实现","duration":"19:04","stage":"第7阶段：机房预约系统"},
+ {"title":"31 机房预约系统-教师子菜单搭建以及注销实现","duration":"09:29","stage":"第7阶段：机房预约系统"},
+ {"title":"32 机房预约系统-教师显示所有预约功能实现","duration":"08:00","stage":"第7阶段：机房预约系统"},
+ {"title":"33 机房预约系统-教师审核预约功能实现","duration":"18:15","stage":"第7阶段：机房预约系统"}
+];
+/*
+【状态与计算】数据路径：
+手动保存 → records → 课程去重统计 + 每日首次/复习分类 → 图表与明细。
+点击预览 → position → 预览卡片与前缀勾选。
+图表开关仅改变显示与偏好，不写入每日记录。
+*/
+const $ = id => document.getElementById(id);
+// 每类状态单独保存；修改配置前缀即可为另一课程建立独立记录。
+const LOG_KEY = TEMPLATE_CONFIG.storagePrefix + "-daily-records-v1";
+const POSITION_KEY = TEMPLATE_CONFIG.storagePrefix + "-position-v1";
+const IDLE_FILTER_KEY = TEMPLATE_CONFIG.storagePrefix + "-hide-idle-days-v1";
+const REVIEW_DISPLAY_KEY = TEMPLATE_CONFIG.storagePrefix + "-show-review-v1";
+const TITLE = TEMPLATE_CONFIG.title;
+// durations[i] 是第 i + 1 集的秒数；统计使用整数秒，避免累计四舍五入误差。
+const durations = BASE.map(x => x.duration.split(":").reduce((s, n) => s * 60 + Number(n), 0));
+const totalSeconds = durations.reduce((sum, n) => sum + n, 0);
+const minutes = seconds => (seconds / 60).toFixed(1) + " 分钟";
+const sumSeconds = episodes => episodes.reduce((sum, n) => sum + durations[n - 1], 0);
+// records 是实际保存的数据；editingDate 区分修改旧日期和录入新日期。
+let records = [];
+let recordsReadable = true;
+let editingDate = null;
+let hideIdleDays = true;
+try { hideIdleDays = localStorage.getItem(IDLE_FILTER_KEY) !== "false"; } catch (error) { /* 存储不可用时仍可临时切换显示。 */ }
+let showReview = true;
+try { showReview = localStorage.getItem(REVIEW_DISPLAY_KEY) !== "false"; } catch (error) { /* 复习显示偏好读取失败时采用默认显示。 */ }
+// 所有柱形/文字过渡共用一段动画；尊重系统“减少动态效果”设置。
+const chartReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const CHART_TRANSITION_MS = TEMPLATE_CONFIG.chartTransitionMs;
+let chartMotion = null;
+let chartNeedsRender = false;
+
+// 应用主题并更新切换按钮；真正保存偏好的操作在按钮事件中完成。
+function applyTheme(theme) {
+ document.documentElement.dataset.theme = theme;
+ const next = theme === "dark" ? "浅色" : "深色";
+ $("themeToggle").textContent = "切换" + next;
+ $("themeToggle").setAttribute("aria-label", "切换到" + next + "主题");
+ $("themeToggle").title = "当前为" + (theme === "dark" ? "深色" : "浅色") + "主题";
+}
+
+// 分别显示统计或预览的提示，空文字会隐藏提示区域。
+function showMessage(text, error = false, scope = "daily") {
+ const message = $(scope === "browse" ? "browseMessage" : "message");
+ message.textContent = text;
+ message.className = "message" + (error ? " error" : "");
+ message.hidden = !text;
+}
+
+// 校验真实日历日期；UTC 往返比对可以排除 2 月 30 日等非法输入。
+function validDate(value) {
+ if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.slice(0, 4) === "0000") return false;
+ const date = new Date(value + "T00:00:00Z");
+ return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+// 解析单集、范围、P 前缀及中英文分隔符；同一天重复填写的分集去重。
+function parseEpisodes(value) {
+ const text = value.trim().replace(/[，、；;]/g, ",").replace(/[～~—–至到]/g, "-")
+  .replace(/\b[Pp]\s*(?=\d)/g, "").replace(/\s*-\s*/g, "-");
+ if (!text) throw new Error("请填写当天学习的分集编号，例如 1-10, 15。");
+ const tokens = text.split(/[,\s]+/).filter(Boolean);
+ if (!tokens.length) throw new Error("请填写有效的分集编号。");
+ const episodes = new Set();
+ for (const token of tokens) {
+  const match = /^(\d+)(?:-(\d+))?$/.exec(token);
+  if (!match) throw new Error("无法识别“" + token + "”。请使用 1-10, 15 这样的格式。");
+  const start = Number(match[1]), end = Number(match[2] || match[1]);
+  if (start < 1 || end > BASE.length || start > end) {
+   throw new Error("分集编号须在 1～" + BASE.length + " 之间，范围从小到大填写。");
+  }
+  for (let n = start; n <= end; n++) episodes.add(n);
+ }
+ return [...episodes].sort((a, b) => a - b);
+}
+
+// 把递增编号重新压缩为 1-3, 5 等可编辑格式。
+function formatEpisodes(episodes) {
+ const ranges = [];
+ for (let i = 0; i < episodes.length; i++) {
+  const start = episodes[i];
+  let end = start;
+  while (i + 1 < episodes.length && episodes[i + 1] === end + 1) end = episodes[++i];
+  ranges.push(start === end ? String(start) : start + "-" + end);
+ }
+ return ranges.join(", ");
+}
+
+/*
+【记录读取与统计】读取每日记录并校验版本、日期和分集范围。
+格式损坏时禁用保存并保留原始存储，避免用空数据覆盖已有记录。
+*/
+function loadRecords() {
+ try {
+  const raw = localStorage.getItem(LOG_KEY);
+  if (raw === null) return;
+  const saved = JSON.parse(raw);
+  if (saved?.version !== 1 || !Array.isArray(saved.records)) throw new Error("invalid records");
+  const dates = new Set();
+  const loaded = saved.records.map(record => {
+   if (!record || !validDate(record.date) || dates.has(record.date) || !Array.isArray(record.episodes) || !record.episodes.length ||
+    record.episodes.some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) throw new Error("invalid record");
+   dates.add(record.date);
+   return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b) };
+  });
+  records = loaded.sort((a, b) => b.date.localeCompare(a.date));
+ } catch (error) {
+  recordsReadable = false;
+  $("saveRecord").disabled = true;
+  showMessage("记录读取失败，已暂停保存。原数据未修改，请检查浏览器存储设置。", true);
+ }
+}
+
+// 读取独立的预览位置；旧版勾选迁移只使用配置中明确指定的旧键。
+function loadPosition() {
+ try {
+  const raw = localStorage.getItem(POSITION_KEY);
+  if (raw !== null) {
+   const saved = JSON.parse(raw);
+   if (Number.isInteger(saved) && saved >= 0 && saved <= BASE.length) return saved;
+  }
+ } catch (error) { /* 新格式不可用时继续尝试配置的旧键；未配置时从 0 开始。 */ }
+ const readLegacy = key => {
+  if (!key) return [];
+  try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; }
+  catch (error) { return []; }
+ };
+ const saved = readLegacy(TEMPLATE_CONFIG.legacyPositionKeys[0]);
+ const old = readLegacy(TEMPLATE_CONFIG.legacyPositionKeys[1]);
+ let last = 0;
+ BASE.forEach((_, i) => { if (Boolean(saved[i]?.done ?? old[i]?.done)) last = i + 1; });
+ return last;
+}
+
+let position = loadPosition();
+
+// 课程完成量：先对所有日期的分集取并集，再按时长计算百分比；复习不重复增加完成量。
+function renderStatistics() {
+ if (!recordsReadable) {
+  $("vDone").textContent = "— / " + BASE.length;
+  $("vPct").textContent = "—";
+  $("vHours").textContent = "— / " + minutes(totalSeconds);
+  $("vLeft").textContent = "—";
+  $("progressBar").setAttribute("aria-valuetext", "每日记录读取失败，统计暂不可用");
+  return;
+ }
+ const completed = [...new Set(records.flatMap(record => record.episodes))];
+ const learned = sumSeconds(completed);
+ const percent = totalSeconds > 0 ? learned / totalSeconds * 100 : 0;
+ $("vDone").textContent = completed.length + " / " + BASE.length;
+ $("vPct").textContent = percent.toFixed(1) + "%";
+ $("vHours").textContent = (learned / 60).toFixed(1) + " / " + minutes(totalSeconds);
+ $("vLeft").textContent = BASE.length - completed.length;
+ $("progressFill").style.width = percent + "%";
+ $("progressBar").setAttribute("aria-valuenow", percent.toFixed(1));
+}
+
+// 预览累计量只取 durations[0..position)，搜索和阶段筛选不会改变这个口径。
+function renderPreviewStatistics() {
+ const learned = durations.slice(0, position).reduce((sum, seconds) => sum + seconds, 0);
+ const percent = totalSeconds > 0 ? learned / totalSeconds * 100 : 0;
+ $("previewDone").textContent = position + " / " + BASE.length;
+ $("previewPct").textContent = percent.toFixed(1) + "%";
+ $("previewHours").textContent = (learned / 60).toFixed(1) + " / " + minutes(totalSeconds);
+ $("previewLeft").textContent = BASE.length - position;
+ $("previewProgressFill").style.width = percent + "%";
+ $("previewProgressBar").setAttribute("aria-valuenow", percent.toFixed(1));
+ $("positionLabel").textContent = position ? "预览至 P" + position : "未选择分集";
+ $("jumpToPosition").disabled = position === 0;
+ $("jumpToPosition").title = position ? "跳转至 P" + position : "尚未选择分集";
+}
+
+/*
+按日期升序分类每个分集：第一次记录为首次学习，后续日期记录为跨天复习。
+补记、修改、删除后重新分类，因此归属由日期先后决定，而不是保存顺序。
+未学习日期只生成零值占位；按 UTC 一天推进，避免夏令时造成重复或漏日。
+*/
+function getDailyDisplay() {
+ // 分类先于显示筛选，关闭复习或过滤空日期均不改变首次/复习归属。
+ const seen = new Set();
+ const saved = [...records].sort((a, b) => a.date.localeCompare(b.date)).map(record => {
+  let firstSeconds = 0, reviewSeconds = 0, firstCount = 0, reviewCount = 0;
+  for (const episode of record.episodes) {
+   if (seen.has(episode)) { reviewSeconds += durations[episode - 1]; reviewCount++; }
+   else { firstSeconds += durations[episode - 1]; firstCount++; seen.add(episode); }
+  }
+  return { ...record, firstSeconds, reviewSeconds, firstCount, reviewCount };
+ });
+ if (!saved.length) return { days: [], gapCount: 0, limited: false };
+ const first = Date.parse(saved[0].date + "T00:00:00Z");
+ const last = Date.parse(saved[saved.length - 1].date + "T00:00:00Z");
+ const span = Math.round((last - first) / 86400000) + 1;
+ const gapCount = span - saved.length;
+ // 保留异常输入防护：日期误填成跨度很大的年份时，避免生成海量占位。
+ const limited = !hideIdleDays && span > 3660;
+ if (hideIdleDays || limited) return { days: saved, gapCount, limited };
+ const byDate = new Map(saved.map(record => [record.date, record]));
+ const days = [];
+ for (let time = first; time <= last; time += 86400000) {
+  const date = new Date(time).toISOString().slice(0, 10);
+  days.push(byDate.get(date) || { date, episodes: [], unrecorded: true, firstSeconds: 0, reviewSeconds: 0, firstCount: 0, reviewCount: 0 });
+ }
+ return { days, gapCount, limited };
+}
+
+// 同步未学习日期开关及异常跨度提示，不修改实际记录。
+function updateDayFilterInfo(display) {
+ $("hideIdleDays").setAttribute("aria-checked", String(hideIdleDays));
+ const hint = $("dayFilterHint");
+ hint.className = "note" + (display.limited ? " error" : "");
+ hint.textContent = display.limited ? "日期跨度超过 3660 天，暂只显示有记录的日期，请检查日期。" : "";
+ hint.hidden = !display.limited;
+}
+
+// 同步复习开关、图例和统计口径提示。
+function updateReviewDisplayInfo() {
+ $("showReview").setAttribute("aria-checked", String(showReview));
+ $("reviewLegend").textContent = showReview ? "跨天复习" : "跨天复习（已隐藏）";
+ $("reviewDisplayHint").textContent = "课程进度去重，每日时长含复习；开关仅影响显示。";
+}
+
+// 生成倒序日明细；累计集次/分钟包含复习，未记录日期只是显示占位。
+function renderDailyRecords(animateChart = false) {
+ const display = getDailyDisplay();
+ updateDayFilterInfo(display);
+ const container = $("dailyRecords");
+ container.replaceChildren();
+ const studyCount = records.reduce((sum, record) => sum + record.episodes.length, 0);
+ const studySeconds = records.reduce((sum, record) => sum + sumSeconds(record.episodes), 0);
+ $("dailySummary").textContent = "累计 " + records.length + " 天 · " + studyCount + " 集次 · " + minutes(studySeconds) + "（含复习）";
+ if (!records.length) {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  const title = document.createElement("strong");
+  title.textContent = recordsReadable ? "暂无记录" : "记录读取失败";
+  empty.append(title, document.createTextNode(recordsReadable ? "选择日期、填写分集后保存。" : "请检查浏览器存储设置。"));
+  container.append(empty);
+ }
+ for (const record of [...display.days].reverse()) {
+  const row = document.createElement("article");
+  row.className = "daily-record" + (record.unrecorded ? " unrecorded" : "");
+  row.dataset.date = record.date;
+  const date = document.createElement("time"); date.dateTime = record.date; date.textContent = record.date;
+  const episodes = document.createElement("div"); episodes.className = "record-episodes";
+  const caption = document.createElement("div"); caption.className = "record-caption"; caption.textContent = record.unrecorded ? "未记录" : "分集（P）";
+  episodes.append(caption, document.createTextNode(record.unrecorded ? "—" : formatEpisodes(record.episodes)));
+  const count = document.createElement("div"); count.className = "record-count"; count.textContent = record.episodes.length + " 集";
+  const duration = document.createElement("div"); duration.className = "record-minutes"; duration.textContent = minutes(sumSeconds(record.episodes));
+  const actions = document.createElement("div"); actions.className = "record-actions";
+  const edit = document.createElement("button"); edit.type = "button"; edit.textContent = record.unrecorded ? "补记" : "修改"; edit.dataset.action = record.unrecorded ? "add" : "edit"; edit.setAttribute("aria-label", (record.unrecorded ? "补记 " : "修改 ") + record.date + " 的记录");
+  actions.append(edit);
+  if (!record.unrecorded) {
+   const remove = document.createElement("button"); remove.type = "button"; remove.className = "danger"; remove.textContent = "删除"; remove.dataset.action = "delete"; remove.setAttribute("aria-label", "删除 " + record.date + " 的记录");
+   actions.append(remove);
+  }
+  row.append(date, episodes, count, duration, actions);
+  container.append(row);
+ }
+ renderDailyChart(animateChart, display);
+}
+
+// 创建 SVG 命名空间元素，避免普通 HTML 元素无法绘制的问题。
+function svgElement(name, attributes = {}, text) {
+ const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+ for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+ if (text !== undefined) element.textContent = text;
+ return element;
+}
+
+// 立即结束当前动画并清理退场元素；用于切换页面、减少动态效果或隐藏窗口。
+function finishDailyChartAnimation() {
+ if (!chartMotion) return;
+ const motion = chartMotion;
+ cancelAnimationFrame(motion.frame);
+ chartMotion = null;
+ motion.finish();
+}
+
+/*
+【每日图表】每一天都有柱子与完整详情；拥挤时按实际位置抽取文字标签。
+端点文字向图内收拢，首尾日期仍保留，以免文字被 SVG 边缘裁掉。
+*/
+function chartLabelIndexes(count, minimumGap, centerAt) {
+ const indexes = [];
+ for (let i = 0; i < count; i++) {
+  if (!indexes.length || centerAt(i) - centerAt(indexes[indexes.length - 1]) >= minimumGap) indexes.push(i);
+ }
+ const last = count - 1;
+ if (last > 0 && indexes[indexes.length - 1] !== last) {
+  while (indexes.length > 1 && centerAt(last) - centerAt(indexes[indexes.length - 1]) < minimumGap) indexes.pop();
+  indexes.push(last);
+ }
+ return new Set(indexes);
+}
+
+/*
+renderDailyChart(animate, display)：
+- 按分钟生成蓝色首次学习柱，红色复习柱堆叠在蓝色之上。
+- SVG 宽度固定为容器宽度，天数增加时缩小每个日期槽位与柱宽。
+- 按实际文字宽度缩小柱顶字号，达到最小字号后再抽取标签。
+- 以日期复用 DOM 节点，from/to 状态包含位置、尺寸、数值、字号和透明度。
+- 动画中再次更新时，从当前显示状态继续插值，避免跳回旧状态。
+默认关注 50 天以内的课程；动画/字号边界由 TEMPLATE_CONFIG 配置。
+*/
+function renderDailyChart(animate = false, display = getDailyDisplay()) {
+ updateReviewDisplayInfo();
+ const chart = $("dailyChart");
+ // 隐藏的面板宽度为零，先标记待绘制，切回统计时再计算正确尺寸。
+ if (!chart.clientWidth) {
+  chartNeedsRender = true;
+  finishDailyChartAnimation();
+  return;
+ }
+ chartNeedsRender = false;
+ if (chartMotion) {
+  cancelAnimationFrame(chartMotion.frame);
+  chartMotion = null;
+ }
+ chart.scrollLeft = 0;
+ $("chartDetail").textContent = "悬停或点击柱子查看详情。";
+ const showEmpty = () => {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  empty.textContent = recordsReadable ? "暂无学习数据" : "记录读取失败，图表不可用。";
+  chart.replaceChildren(empty);
+ };
+ let svg = chart.querySelector("svg");
+ if (!records.length && !svg) {
+  showEmpty();
+  chart.dataset.animating = "false";
+  return;
+ }
+ const days = display.days;
+ const values = days.map(record => (record.firstSeconds + (showReview ? record.reviewSeconds : 0)) / 60);
+ const maxValue = Math.max(1, ...values);
+ // 纵轴使用约四段整齐刻度（1/2/5/10 的数量级），便于比较每日分钟数。
+ const rawStep = maxValue / 4;
+ const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+ const step = [1, 2, 5, 10].find(n => n >= rawStep / magnitude) * magnitude;
+ const axisMax = Math.ceil(maxValue / step) * step;
+ // 固定视口宽度，所有柱子留在一行；height/margins 控制绘图区及文字空间。
+ const width = chart.clientWidth;
+ const height = 240, left = 50, right = 24, top = 42, bottom = 34;
+ const plotHeight = height - top - bottom;
+ const plotWidth = width - left - right;
+ const baseline = top + plotHeight;
+ const slotWidth = plotWidth / Math.max(1, days.length);
+ const barWidth = Math.min(38, slotWidth * (slotWidth < 20 ? .88 : .72));
+ const fullDates = slotWidth >= 76 || new Set(days.map(record => record.date.slice(0, 4))).size > 1;
+ const dateLabelWidth = fullDates ? 70 : 42;
+ const centerAt = i => left + slotWidth * (i + .5);
+ const dateCenterAt = i => Math.max(left + dateLabelWidth / 2, Math.min(width - right - dateLabelWidth / 2, centerAt(i)));
+ const dateIndexes = chartLabelIndexes(days.length, dateLabelWidth + 8, dateCenterAt);
+ const largestValue = Math.max(0, ...days.map(record => Math.max(record.firstSeconds, showReview ? record.reviewSeconds : 0) / 60));
+ if (!svg) {
+  svg = svgElement("svg", { height, role: "img", "aria-labelledby": "chartSvgTitle chartSvgDescription" });
+  svg.append(svgElement("title", { id: "chartSvgTitle" }, "每日学习分钟柱状图"));
+  svg.append(svgElement("desc", { id: "chartSvgDescription" }));
+  chart.replaceChildren(svg);
+ }
+ // 用隐藏文字测量浏览器实际字体；正常显示字号在配置的上下限之间连续变化。
+ const labelProbe = svgElement("text", { class: "chart-value", visibility: "hidden", "aria-hidden": "true" }, largestValue.toFixed(1));
+ const maxFontSize = TEMPLATE_CONFIG.valueFontMax;
+ labelProbe.style.fontSize = maxFontSize + "px";
+ svg.append(labelProbe);
+ const labelWidthAtMax = Math.max(1, labelProbe.getComputedTextLength());
+ labelProbe.remove();
+ const valueFontSize = Math.max(TEMPLATE_CONFIG.valueFontMin, Math.min(maxFontSize, (slotWidth - 5) * maxFontSize / labelWidthAtMax));
+ const valueLabelWidth = labelWidthAtMax * valueFontSize / maxFontSize + 4;
+ const valueIndexes = chartLabelIndexes(days.length, valueLabelWidth, centerAt);
+ svg.querySelector("desc").textContent = "横轴日期，纵轴分钟。蓝色首次学习，红色跨天复习" + (showReview ? "。" : "（已隐藏）。") + "共 " + days.length + " 天，可聚焦柱子查看详情。";
+ const setWidth = value => {
+  svg.setAttribute("width", value);
+  svg.setAttribute("viewBox", "0 0 " + value + " " + height);
+ };
+ setWidth(width);
+ // 纵轴刻度改变时保留旧轴与新轴，交叉淡出/淡入。
+ const oldAxes = [...svg.querySelectorAll(".chart-axis-layer")];
+ const axisKey = [width, axisMax, step].join(":");
+ let axis = days.length ? oldAxes.find(layer => layer.dataset.key === axisKey) : null;
+ if (days.length && !axis) {
+  axis = svgElement("g", { class: "chart-axis-layer", opacity: 0, "data-key": axisKey });
+  for (let tick = 0; tick <= Math.ceil(axisMax / step); tick++) {
+   const value = tick * step, y = baseline - value / axisMax * plotHeight;
+   axis.append(svgElement("line", { x1: left, y1: y, x2: width - right, y2: y, class: "chart-grid" }));
+   axis.append(svgElement("text", { x: left - 9, y: y + 4, "text-anchor": "end", class: "chart-axis" }, String(Number(value.toFixed(1)))));
+  }
+  svg.insertBefore(axis, svg.querySelector(".chart-day"));
+ }
+ const axisTransitions = [...new Set([...oldAxes, axis].filter(Boolean))].map(layer => {
+  const to = layer === axis ? 1 : 0;
+  layer.setAttribute("aria-hidden", String(!to));
+  return { layer, from: Number(layer.getAttribute("opacity") ?? 1), to };
+ });
+ // 文字层放在所有柱子之上，邻近的高柱不会遮挡另一日的分钟标签。
+ const labelLayer = svg.querySelector(".chart-label-layer") || svgElement("g", { class: "chart-label-layer", "pointer-events": "none", "aria-hidden": "true" });
+ const existing = new Map([...svg.querySelectorAll(".chart-day")].map(group => [group.dataset.date, group]));
+ const enteringFontSize = [...existing.values()].find(group => !group.hasAttribute("aria-hidden"))?.chartState.fontSize ?? valueFontSize;
+ const transitions = [];
+ // 缓存未四舍五入的状态；显示文字可以取小数，但续接动画不能取舍入后的值。
+ const readState = group => ({ ...group.chartState });
+ // 唯一的绘制入口：蓝/红柱形及文字同帧更新，字号也参与同一条过渡曲线。
+ const draw = (item, state) => {
+  item.group.chartState = { ...state };
+  item.valueLabel.style.fontSize = item.reviewLabel.style.fontSize = state.fontSize + "px";
+  item.valueLabel.style.strokeWidth = item.reviewLabel.style.strokeWidth = state.fontSize / 6 + "px";
+  item.hit.setAttribute("x", state.center - state.slotWidth / 2);
+  item.hit.setAttribute("y", top);
+  item.hit.setAttribute("width", state.slotWidth);
+  item.hit.setAttribute("height", plotHeight);
+  item.bar.setAttribute("x", state.center - state.width / 2);
+  item.bar.setAttribute("y", baseline - state.height);
+  item.bar.setAttribute("width", state.width);
+  item.bar.setAttribute("height", state.height);
+  item.reviewBar.setAttribute("x", state.center - state.width / 2);
+  item.reviewBar.setAttribute("y", baseline - state.height - state.reviewHeight);
+  item.reviewBar.setAttribute("width", state.width);
+  item.reviewBar.setAttribute("height", state.reviewHeight);
+  item.reviewBar.setAttribute("opacity", state.reviewOpacity);
+  item.reviewBar.setAttribute("visibility", state.reviewOpacity > 0 ? "visible" : "hidden");
+  item.valueLabel.setAttribute("x", state.center);
+  item.valueLabel.setAttribute("y", baseline - state.height - state.reviewHeight - 7);
+  item.valueLabel.textContent = state.value.toFixed(1);
+  item.valueLabel.setAttribute("opacity", state.labelOpacity);
+  item.valueLabel.setAttribute("visibility", state.labelOpacity > 0 ? "visible" : "hidden");
+  item.reviewLabel.setAttribute("x", state.center);
+  item.reviewLabel.setAttribute("y", baseline - state.height - state.reviewHeight - 23);
+  item.reviewLabel.setAttribute("opacity", state.reviewOpacity * state.labelOpacity);
+  item.reviewLabel.setAttribute("visibility", state.reviewOpacity * state.labelOpacity > 0 ? "visible" : "hidden");
+  item.reviewLabel.textContent = state.reviewValue.toFixed(1);
+  item.dateLabel.setAttribute("x", state.dateCenter);
+  item.dateLabel.setAttribute("opacity", state.dateOpacity);
+  item.dateLabel.setAttribute("visibility", state.dateOpacity > 0 ? "visible" : "hidden");
+  item.group.setAttribute("opacity", state.opacity);
+  item.labels.setAttribute("opacity", state.opacity);
+ };
+ // 保存一个日期的旧/新目标；新日期从零高度淡入，删除日期退场后再移除。
+ const makeTransition = (group, from, to, remove = false) => {
+  const labels = group.chartLabels;
+  const item = { group, labels, hit: group.querySelector(".chart-hit"), bar: group.querySelector('[data-series="first"]'), reviewBar: group.querySelector('[data-series="review"]'), valueLabel: labels.querySelector(".chart-value"), reviewLabel: labels.querySelector(".review-value"), dateLabel: labels.querySelector(".chart-date"), from, to, remove };
+  transitions.push(item);
+  draw(item, from);
+  return item;
+ };
+ const focusedDate = document.activeElement?.closest?.(".chart-day")?.dataset.date;
+ const focusedSeries = document.activeElement?.dataset.series;
+ days.forEach((record, i) => {
+  const value = record.firstSeconds / 60, reviewValue = record.reviewSeconds / 60;
+  const visibleReview = showReview && reviewValue > 0;
+  const totalValue = (record.firstSeconds + record.reviewSeconds) / 60;
+  const barHeight = value / axisMax * plotHeight;
+  const center = centerAt(i);
+  const dateCenter = dateCenterAt(i);
+  // 详情始终保留精确到一位小数的分钟数，复习隐藏时仍能查看完整拆分。
+  const firstLabel = record.date + "：首次学习 " + record.firstCount + " 集，" + value.toFixed(1) + " 分钟";
+  const reviewLabel = record.date + "：跨天复习 " + record.reviewCount + " 集，" + reviewValue.toFixed(1) + " 分钟";
+  const label = record.date + "：" + (record.unrecorded ? "未记录 · 0.0 分钟" : record.episodes.length + " 集，共 " + totalValue.toFixed(1) + " 分钟；首次学习 " + value.toFixed(1) + " 分钟，跨天复习 " + reviewValue.toFixed(1) + " 分钟");
+  let group = existing.get(record.date);
+  const from = group ? readState(group) : { center, slotWidth, dateCenter, fontSize: enteringFontSize, width: barWidth, height: 0, reviewHeight: 0, value: 0, reviewValue: 0, reviewOpacity: 0, labelOpacity: 0, dateOpacity: 0, opacity: 0 };
+  if (!group) {
+   group = svgElement("g", { class: "chart-day", "data-date": record.date });
+   const bar = svgElement("rect", { "data-series": "first" }); bar.append(svgElement("title"));
+   const reviewBar = svgElement("rect", { "data-series": "review" }); reviewBar.append(svgElement("title"));
+   group.append(svgElement("title", { class: "chart-day-title" }), svgElement("rect", { class: "chart-hit", "aria-hidden": "true" }), bar, reviewBar);
+   group.chartLabels = svgElement("g", { "data-date": record.date });
+   group.chartLabels.append(svgElement("text", { class: "chart-value", "text-anchor": "middle" }), svgElement("text", { class: "review-value", "text-anchor": "middle" }), svgElement("text", { class: "chart-axis chart-date", y: baseline + 23, "text-anchor": "middle" }));
+  }
+  existing.delete(record.date);
+  group.setAttribute("class", "chart-day" + (record.unrecorded ? " unrecorded" : ""));
+  group.chartLabels.setAttribute("class", "chart-day-labels" + (record.unrecorded ? " unrecorded" : ""));
+  labelLayer.append(group.chartLabels);
+  group.dataset.totalMinutes = totalValue;
+  group.querySelector(".chart-day-title").textContent = label;
+  group.removeAttribute("aria-hidden");
+  const item = makeTransition(group, from, { center, slotWidth, dateCenter, fontSize: valueFontSize, width: barWidth, height: barHeight, reviewHeight: visibleReview ? reviewValue / axisMax * plotHeight : 0, value, reviewValue: visibleReview ? reviewValue : 0, reviewOpacity: visibleReview ? 1 : 0, labelOpacity: valueIndexes.has(i) ? 1 : 0, dateOpacity: dateIndexes.has(i) ? 1 : 0, opacity: 1 });
+  item.hit.style.removeProperty("pointer-events");
+  item.dateLabel.textContent = fullDates ? record.date : record.date.slice(5);
+  item.dateLabel.setAttribute("aria-hidden", String(!dateIndexes.has(i)));
+  item.valueLabel.setAttribute("aria-hidden", String(!valueIndexes.has(i)));
+  for (const [key, text] of Object.entries({ class: "study-bar", "data-date": record.date, "data-minutes": value, tabindex: value > 0 ? 0 : -1, "aria-label": record.unrecorded ? label : firstLabel })) item.bar.setAttribute(key, text);
+  for (const [key, text] of Object.entries({ class: "review-bar", "data-date": record.date, "data-minutes": reviewValue, tabindex: visibleReview ? 0 : -1, "aria-label": reviewLabel, "aria-hidden": !visibleReview })) item.reviewBar.setAttribute(key, text);
+  item.bar.querySelector("title").textContent = record.unrecorded ? label : firstLabel;
+  item.reviewBar.querySelector("title").textContent = reviewLabel;
+  item.reviewLabel.setAttribute("aria-hidden", String(!visibleReview || !valueIndexes.has(i)));
+  svg.append(group);
+ });
+ // 未出现在新数据中的旧日期：立即取消交互，再缩小淡出。
+ for (const group of existing.values()) {
+  const from = readState(group);
+  group.setAttribute("aria-hidden", "true");
+  const item = makeTransition(group, from, { ...from, height: 0, reviewHeight: 0, value: 0, reviewValue: 0, reviewOpacity: 0, labelOpacity: 0, dateOpacity: 0, opacity: 0 }, true);
+  item.hit.style.pointerEvents = "none";
+  item.bar.setAttribute("class", "study-bar-exit");
+  item.bar.setAttribute("tabindex", "-1");
+  item.reviewBar.setAttribute("class", "review-bar-exit");
+  item.reviewBar.setAttribute("tabindex", "-1");
+ }
+ svg.append(labelLayer);
+ if (focusedDate) svg.querySelector('[data-date="' + focusedDate + '"][data-series="' + focusedSeries + '"][tabindex="0"]')?.focus({ preventScroll: true });
+ // 收尾统一写入精确目标状态，并移除退出的日期/旧坐标轴。
+ const finish = () => {
+  for (const item of transitions) {
+   if (item.remove) { item.group.remove(); item.labels.remove(); } else draw(item, item.to);
+  }
+  for (const item of axisTransitions) {
+   if (!item.to) item.layer.remove(); else item.layer.setAttribute("opacity", 1);
+  }
+  if (!days.length) showEmpty(); else setWidth(width);
+  chart.dataset.animating = "false";
+ };
+ const changed = transitions.some(item => item.remove || Object.keys(item.to).some(key => Math.abs(item.to[key] - item.from[key]) > .0001)) || axisTransitions.some(item => item.from !== item.to);
+ if (!animate || chartReducedMotion.matches || !changed || document.hidden) {
+  finish();
+  return;
+ }
+ chart.dataset.animating = "true";
+ const started = performance.now();
+ const motion = { frame: 0, finish };
+ chartMotion = motion;
+ // requestAnimationFrame 随浏览器刷新率推进，三次缓出使末尾逐渐减速。
+ const stepFrame = now => {
+  if (chartMotion !== motion) return;
+  const progress = Math.min(1, (now - started) / CHART_TRANSITION_MS);
+  const eased = 1 - (1 - progress) ** 3;
+  for (const item of transitions) {
+   const state = {};
+   for (const key of Object.keys(item.to)) state[key] = item.from[key] + (item.to[key] - item.from[key]) * eased;
+   draw(item, state);
+  }
+  for (const item of axisTransitions) item.layer.setAttribute("opacity", item.from + (item.to - item.from) * eased);
+  if (progress < 1) motion.frame = requestAnimationFrame(stepFrame);
+  else { chartMotion = null; finish(); }
+ };
+ motion.frame = requestAnimationFrame(stepFrame);
+}
+
+/* 【表单与预览】每日保存、前缀勾选及当前位置跳转。 */
+// 显示当前输入的集数与分钟数；输入草稿只在提交后才进入统计。
+function updatePreview() {
+ const existing = records.find(record => record.date === $("recordDate").value);
+ $("saveRecord").textContent = existing ? "更新当天记录" : "保存当天记录";
+ const preview = $("entryPreview");
+ preview.className = "preview";
+ preview.hidden = !$("recordEpisodes").value.trim();
+ if (preview.hidden) {
+  preview.textContent = "";
+  return;
+ }
+ try {
+  const episodes = parseEpisodes($("recordEpisodes").value);
+  const unchanged = existing && episodes.length === existing.episodes.length && episodes.every((n, i) => n === existing.episodes[i]);
+  preview.textContent = (unchanged ? "已保存 " + existing.date + " · " : "待保存 · ") + episodes.length + " 集 · " + minutes(sumSeconds(episodes)) + (!unchanged && existing ? "（将覆盖当天记录）" : "");
+ } catch (error) {
+  preview.className = "preview error";
+  preview.textContent = error.message;
+ }
+}
+
+// 清空表单及编辑状态，随后更新输入预览。
+function clearForm() {
+ $("recordForm").reset();
+ editingDate = null;
+ updatePreview();
+}
+
+// 写入成功后才替换内存状态并刷新统计；保存失败时保留原数据和输入。
+function commitRecords(next, message) {
+ if (!recordsReadable) return false;
+ try {
+  localStorage.setItem(LOG_KEY, JSON.stringify({ version: 1, records: next }));
+ } catch (error) {
+  showMessage("保存失败：浏览器存储不可用或已满。本次修改未保存，请保留输入后重试。", true);
+  return false;
+ }
+ records = next;
+ renderStatistics();
+ renderDailyRecords(true);
+ updatePreview();
+ showMessage(message);
+ return true;
+}
+
+// 当前链接规则适用于 B 站合集；其他平台在这里修改分集 URL 拼接方式。
+function buildEpisodeUrl(n) {
+ const url = new URL(TEMPLATE_CONFIG.courseUrl);
+ url.searchParams.set("p", String(n));
+ return url.href;
+}
+
+// 按搜索、阶段、勾选状态生成分集；保留滚动及焦点，勾选状态由 position 唯一决定。
+function renderList(resetScroll = false) {
+ const list = $("list"), previousScroll = list.scrollTop;
+ const active = document.activeElement;
+ const focusedEpisode = list.contains(active) ? active.closest(".row")?.dataset.episode : null;
+ const focusedClass = active?.className === "check" ? ".check" : ".title";
+ const query = $("search").value.trim().toLowerCase(), stage = $("stage").value, status = $("status").value;
+ const fragment = document.createDocumentFragment();
+ let count = 0;
+ BASE.forEach((episode, i) => {
+  const n = i + 1, checked = n <= position;
+  if (query && !("p" + n + " " + episode.title).toLowerCase().includes(query)) return;
+  if (stage && episode.stage !== stage) return;
+  if (status && (status === "1" ? !checked : checked)) return;
+  count++;
+  const row = document.createElement("article");
+  row.className = "row" + (checked ? " done" : "") + (n === position ? " current" : "");
+  row.dataset.episode = n;
+  const label = "预览至 P" + n;
+  const cb = document.createElement("input"); cb.type = "checkbox"; cb.className = "check"; cb.checked = checked; cb.title = label; cb.setAttribute("aria-label", label);
+  const no = document.createElement("b"); no.textContent = String(n).padStart(3, "0");
+  const title = document.createElement("button"); title.type = "button"; title.className = "title"; title.textContent = episode.title; title.title = label;
+  const badge = document.createElement("div"); badge.className = "stage"; badge.textContent = episode.stage;
+  const duration = document.createElement("div"); duration.className = "duration"; duration.textContent = minutes(durations[i]);
+  const open = document.createElement("a"); open.className = "open"; open.href = buildEpisodeUrl(n); open.target = "_blank"; open.rel = "noopener noreferrer"; open.textContent = "打开第 " + n + " 集";
+  row.append(cb, no, title, badge, duration, open);
+  fragment.append(row);
+ });
+ if (!count) {
+  const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "没有匹配的分集"; fragment.append(empty);
+ }
+ list.replaceChildren(fragment);
+ list.scrollTop = resetScroll ? 0 : previousScroll;
+ if (focusedEpisode) list.querySelector('[data-episode="' + focusedEpisode + '"] ' + focusedClass)?.focus({ preventScroll: true });
+ renderPreviewStatistics();
+}
+
+// 一个整数决定整个勾选前缀；重复点击已选分集也会重新截断后续勾选。
+function setPosition(next) {
+ try {
+  localStorage.setItem(POSITION_KEY, JSON.stringify(next));
+  position = next;
+  showMessage("", false, "browse");
+ } catch (error) {
+  showMessage("预览位置保存失败，请检查浏览器存储设置。", true, "browse");
+ }
+ renderList();
+}
+
+// 将当前预览位置滚到列表中央；仅清除遮挡目标的筛选，并保留其他筛选。
+function jumpToPosition() {
+ const list = $("list");
+ if (!position || list.hidden) return;
+ let row = list.querySelector('[data-episode="' + position + '"]');
+ if (!row) {
+  // 仅解除遮挡当前分集的搜索/阶段/未勾选筛选，目标位置保持原值。
+  const episode = BASE[position - 1];
+  const query = $("search").value.trim().toLowerCase();
+  if (query && !("p" + position + " " + episode.title).toLowerCase().includes(query)) $("search").value = "";
+  if ($("stage").value && $("stage").value !== episode.stage) $("stage").value = "";
+  if ($("status").value === "0") $("status").value = "";
+  renderList();
+  row = list.querySelector('[data-episode="' + position + '"]');
+ }
+ if (!row) return;
+ row.querySelector(".title").focus({ preventScroll: true });
+ const top = list.scrollTop + row.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - row.offsetHeight) / 2;
+ list.scrollTo({ top: Math.max(0, Math.min(top, list.scrollHeight - list.clientHeight)), behavior: chartReducedMotion.matches ? "instant" : "smooth" });
+}
+
+// 切换对应头部和滚动面板，保留表单草稿、预览位置与各面板滚动状态。
+function setTab(name) {
+ const daily = name === "daily";
+ $("dailyHeader").hidden = !daily;
+ $("dailyControls").hidden = !daily;
+ $("browseControls").hidden = daily;
+ $("dailyPanel").hidden = !daily;
+ $("list").hidden = daily;
+ if (!daily) finishDailyChartAnimation();
+ else if (chartNeedsRender) renderDailyChart();
+ $("pageTitle").textContent = TITLE + " · " + (daily ? "学习统计" : "分集预览");
+ $("subtitleText").textContent = "共 " + BASE.length + " 集 · 数据仅存本浏览器 · ";
+ for (const id of ["dailyTab", "browseTab"]) {
+  const selected = (id === "dailyTab") === daily;
+  $(id).setAttribute("aria-selected", String(selected));
+  $(id).tabIndex = selected ? 0 : -1;
+ }
+}
+
+/* 【事件与初始化】先绑定交互，最后读取记录并完成首次绘制。 */
+$("heading").textContent = TITLE;
+$("episodeRangeLabel").textContent = "学习分集（P1～P" + BASE.length + "）";
+$("recordEpisodes").placeholder = BASE.length >= 15 ? "例如 1-10, 15" : BASE.length > 1 ? "例如 1-" + Math.min(10, BASE.length) : "例如 1";
+const subtitleText = document.createElement("span"); subtitleText.id = "subtitleText"; $("subtitle").append(subtitleText);
+const sourceLink = document.createElement("a"); sourceLink.href = TEMPLATE_CONFIG.courseUrl; sourceLink.target = "_blank"; sourceLink.rel = "noopener noreferrer"; sourceLink.textContent = TEMPLATE_CONFIG.courseLinkText; $("subtitle").append(sourceLink);
+$("stage").append(new Option("全部阶段", ""));
+for (const stage of new Set(BASE.map(episode => episode.stage))) $("stage").append(new Option(stage, stage));
+
+// 每个日期只保存一条记录：选择已存在的日期会替换当天记录，而不是重复追加。
+$("recordForm").addEventListener("submit", event => {
+ event.preventDefault();
+ const date = $("recordDate").value;
+ if (!validDate(date)) { showMessage("请选择有效的学习日期。", true); $("recordDate").focus(); return; }
+ let episodes;
+ try { episodes = parseEpisodes($("recordEpisodes").value); }
+ catch (error) { showMessage(error.message, true); $("recordEpisodes").focus(); return; }
+ const next = [...records.filter(record => record.date !== date), { date, episodes }].sort((a, b) => b.date.localeCompare(a.date));
+ if (commitRecords(next, "")) {
+  $("recordEpisodes").value = formatEpisodes(episodes);
+  editingDate = date;
+  updatePreview();
+ }
+});
+// 选择已有日期自动载入当天记录；从编辑状态切到新日期时清空旧输入。
+$("recordDate").addEventListener("change", () => {
+ const existing = records.find(record => record.date === $("recordDate").value);
+ if (existing) {
+  $("recordEpisodes").value = formatEpisodes(existing.episodes);
+  editingDate = existing.date;
+ } else if (editingDate) {
+  $("recordEpisodes").value = "";
+  editingDate = null;
+ }
+ updatePreview();
+});
+$("recordEpisodes").addEventListener("input", updatePreview);
+$("clearForm").addEventListener("click", () => { clearForm(); if (recordsReadable) showMessage(""); });
+// 事件委托：补记只填入日期，修改载入原分集，删除须用户确认后再保存。
+$("dailyRecords").addEventListener("click", event => {
+ const button = event.target.closest("button[data-action]");
+ if (!button) return;
+ const date = button.closest(".daily-record").dataset.date;
+ if (button.dataset.action === "add") {
+  $("recordDate").value = date;
+  $("recordEpisodes").value = "";
+  editingDate = null;
+  updatePreview();
+  $("recordEpisodes").focus();
+  return;
+ }
+ const record = records.find(item => item.date === date);
+ if (!record) return;
+ if (button.dataset.action === "edit") {
+  $("recordDate").value = date;
+  $("recordEpisodes").value = formatEpisodes(record.episodes);
+  editingDate = date;
+  updatePreview();
+  $("recordEpisodes").focus();
+ } else if (confirm("删除 " + date + " 的学习记录？")) {
+  if (commitRecords(records.filter(item => item.date !== date), "已删除 " + date + " 的记录。") && $("recordDate").value === date) clearForm();
+ }
+});
+// 点击分集行或勾选框均选到此处；“打开分集”链接继续执行正常导航。
+$("list").addEventListener("click", event => {
+ if (event.target.closest("a")) return;
+ const row = event.target.closest(".row");
+ if (row) setPosition(Number(row.dataset.episode));
+});
+$("clearPosition").addEventListener("click", () => setPosition(0));
+$("jumpToPosition").addEventListener("click", jumpToPosition);
+$("search").addEventListener("input", () => renderList(true));
+$("stage").addEventListener("change", () => renderList(true));
+$("status").addEventListener("change", () => renderList(true));
+$("dailyTab").addEventListener("click", () => setTab("daily"));
+$("browseTab").addEventListener("click", () => setTab("browse"));
+// 鼠标悬停、点击或键盘聚焦时，读取对应日期的完整详情。
+for (const eventName of ["pointermove", "click", "focusin"]) {
+ $("dailyChart").addEventListener(eventName, event => {
+  const group = event.target.closest?.(".chart-day");
+  if (!group || group.getAttribute("aria-hidden") === "true") return;
+  const detail = group.querySelector(".chart-day-title").textContent;
+  if ($("chartDetail").textContent !== detail) $("chartDetail").textContent = detail;
+ });
+}
+// 两个显示开关只保存偏好，复用完整记录重新绘制图表。
+$("hideIdleDays").addEventListener("click", () => {
+ hideIdleDays = !hideIdleDays;
+ renderDailyRecords(true);
+ try {
+  localStorage.setItem(IDLE_FILTER_KEY, String(hideIdleDays));
+ } catch (error) {
+  showMessage("无法保存筛选偏好，刷新后可能恢复。", true);
+ }
+});
+$("showReview").addEventListener("click", () => {
+ showReview = !showReview;
+ // 只重绘图表，实际累计时长始终包含复习。
+ renderDailyChart(true);
+ try {
+  localStorage.setItem(REVIEW_DISPLAY_KEY, String(showReview));
+ } catch (error) {
+  showMessage("无法保存复习显示偏好，刷新后可能恢复。", true);
+ }
+});
+// 主题通过 CSS 变量即时切换；偏好保存失败仍允许本次切换。
+$("themeToggle").addEventListener("click", () => {
+ const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+ applyTheme(theme);
+ $("themeNotice").hidden = true;
+ try {
+  localStorage.setItem(THEME_KEY, theme);
+ } catch (error) {
+  $("themeNotice").textContent = "无法保存主题偏好，刷新后可能恢复。";
+  $("themeNotice").hidden = false;
+ }
+});
+// 提供方向键、Home/End 的选项卡键盘操作。
+document.querySelector(".tabs").addEventListener("keydown", event => {
+ if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+ event.preventDefault();
+ const daily = event.key === "Home" || (event.key !== "End" && event.target.id === "browseTab");
+ setTab(daily ? "daily" : "browse");
+ $(daily ? "dailyTab" : "browseTab").focus();
+});
+// 首次加载顺序：主题 → 面板 → 实际记录 → 统计/图表 → 独立预览。
+applyTheme(document.documentElement.dataset.theme);
+setTab("daily");
+loadRecords();
+renderStatistics();
+renderDailyRecords();
+renderList();
+updatePreview();
+// 容器宽度改变后重新排布；隐藏面板的零宽度不会触发错误缩放。
+let chartViewportWidth = $("dailyChart").clientWidth;
+new ResizeObserver(entries => {
+ const width = entries[0].contentRect.width;
+ if (width > 0 && width !== chartViewportWidth) {
+  chartViewportWidth = width;
+  renderDailyChart();
+ }
+}).observe($("dailyChart"));
+// 页面不可见或启用“减少动态效果”时立即收尾，避免积压后台动画。
+chartReducedMotion.addEventListener("change", event => { if (event.matches) finishDailyChartAnimation(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) finishDailyChartAnimation(); });
+</script></body></html>
