@@ -77,9 +77,14 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 @media(max-height:650px){main{padding-top:7px}h1{font-size:17px;line-height:1.3}.sub{font-size:11px}.stats{gap:6px;margin:7px 0}.card{padding:5px 8px}.label{font-size:10px}.value{font-size:18px}#vHours,#previewHours{font-size:15px}.progress{height:6px;margin:5px 0 7px}.view-toolbar{margin-bottom:6px}.tabs button,.theme-toggle{height:28px;font-size:12px}.entry-form input,.entry-form button,.toolbar input,.toolbar select,.toolbar button{height:29px;font-size:12px}.field>span{font-size:10px}.entry-form{gap:6px}.note,.preview,.message{font-size:10px;margin-top:3px}.dashboard{padding-bottom:3px}}
 @media(max-height:650px) and (min-width:601px){.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.entry-form{grid-template-columns:145px minmax(0,1fr) auto auto}}
 @media(max-width:600px){.toolbar #clearPosition{grid-column:auto}}
+/* 透明庆祝层：不遮挡点击，不参与布局。 */
+.completion-fireworks { position:fixed; inset:0; width:100%; height:100%; z-index:30; pointer-events:none; }
+.completion-fireworks[hidden] { display:none; }
 </style>
 </head>
-<body><main>
+<body>
+<canvas id="completionFireworks" class="completion-fireworks" aria-hidden="true" hidden></canvas>
+<main>
 <header class="dashboard">
 <h1 id="heading"></h1><div class="sub" id="subtitle"></div>
 <div class="view-toolbar">
@@ -169,6 +174,163 @@ const chartReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
 const CHART_TRANSITION_MS = 420;
 let chartMotion = null;
 let chartNeedsRender = false;
+
+// 【完成烟花】只由实际统计的整数秒数触发；透明画布不拦截任何操作。
+// 达到 100% 后循环发射，进度回落立即停止；后台暂停，返回或刷新后恢复。
+// 粒子数及设备像素比设上限；系统要求减少动态效果时改为静态烟花。
+const completionFireworks = (() => {
+ const canvas = $("completionFireworks");
+ const context = canvas.getContext("2d");
+ const palettes = [
+  ["#f59e0b", "#fbbf24", "#fb7185"],
+  ["#38bdf8", "#818cf8", "#c084fc"],
+  ["#2dd4bf", "#34d399", "#facc15"],
+  ["#f472b6", "#fb7185", "#fdba74"]
+ ];
+ const rockets = [], sparks = [];
+ let complete = false, frame = 0, width = 0, height = 0, ratio = 0;
+ let lastTime = 0, nextLaunch = 0;
+ const random = (min, max) => min + Math.random() * (max - min);
+
+ function resize() {
+  const nextRatio = Math.min(window.devicePixelRatio || 1, 2);
+  if (width === window.innerWidth && height === window.innerHeight && ratio === nextRatio) return;
+  width = window.innerWidth;
+  height = window.innerHeight;
+  ratio = nextRatio;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.lineCap = "round";
+  rockets.length = sparks.length = 0;
+  lastTime = nextLaunch = 0;
+ }
+
+ function stop() {
+  if (frame) cancelAnimationFrame(frame);
+  frame = lastTime = nextLaunch = 0;
+  rockets.length = sparks.length = 0;
+  context?.clearRect(0, 0, width, height);
+  canvas.hidden = true;
+ }
+
+ function launch() {
+  const startX = random(width * .16, width * .84);
+  rockets.push({
+   startX, endX: Math.max(width * .1, Math.min(width * .9, startX + random(-width * .12, width * .12))),
+   endY: random(height * .13, height * .46),
+   age: 0, duration: random(.75, 1.15),
+   palette: palettes[Math.floor(Math.random() * palettes.length)]
+  });
+ }
+
+ function burst(rocket) {
+  const count = width < 600 ? 48 : 72;
+  const speed = Math.min(width, height, 800) * .22;
+  for (let i = 0; i < count && sparks.length < 360; i++) {
+   const angle = Math.PI * 2 * i / count + random(-.035, .035);
+   const velocity = speed * random(.45, 1);
+   sparks.push({
+    x: rocket.endX, y: rocket.endY,
+    vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
+    age: 0, life: random(1.35, 2),
+    color: rocket.palette[i % rocket.palette.length], size: random(1.1, 2.1)
+   });
+  }
+ }
+
+ function drawStatic() {
+  context.clearRect(0, 0, width, height);
+  context.globalAlpha = .8;
+  for (let n = 0; n < 3; n++) {
+   const x = width * (.22 + n * .28), y = height * (.22 + (n % 2) * .12);
+   const radius = Math.min(width, height) * .075;
+   for (let i = 0; i < 20; i++) {
+    const angle = Math.PI * 2 * i / 20;
+    context.strokeStyle = palettes[n][i % 3];
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(x + Math.cos(angle) * radius * .35, y + Math.sin(angle) * radius * .35);
+    context.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+    context.stroke();
+   }
+  }
+  context.globalAlpha = 1;
+ }
+
+ function tick(time) {
+  frame = 0;
+  if (!complete || document.hidden || chartReducedMotion.matches) { refresh(); return; }
+  const delta = lastTime ? Math.min((time - lastTime) / 1000, .04) : 1 / 60;
+  lastTime = time;
+  context.clearRect(0, 0, width, height);
+  if (time >= nextLaunch) {
+   launch();
+   nextLaunch = time + random(950, 1350);
+  }
+  for (let i = rockets.length - 1; i >= 0; i--) {
+   const rocket = rockets[i];
+   rocket.age += delta;
+   const progress = Math.min(1, rocket.age / rocket.duration);
+   const eased = 1 - (1 - progress) * (1 - progress);
+   const x = rocket.startX + (rocket.endX - rocket.startX) * progress;
+   const y = height + 8 + (rocket.endY - height - 8) * eased;
+   if (progress >= 1) { burst(rocket); rockets.splice(i, 1); continue; }
+   context.globalAlpha = .9;
+   context.strokeStyle = rocket.palette[0];
+   context.lineWidth = 2;
+   context.beginPath();
+   context.moveTo(x, y + 18 * (1 - progress) + 3);
+   context.lineTo(x, y);
+   context.stroke();
+  }
+  for (let i = sparks.length - 1; i >= 0; i--) {
+   const spark = sparks[i];
+   spark.age += delta;
+   if (spark.age >= spark.life) { sparks.splice(i, 1); continue; }
+   const oldX = spark.x, oldY = spark.y;
+   const drag = Math.exp(-delta * .65);
+   spark.vx *= drag;
+   spark.vy = spark.vy * drag + 42 * delta;
+   spark.x += spark.vx * delta;
+   spark.y += spark.vy * delta;
+   context.globalAlpha = Math.pow(1 - spark.age / spark.life, 1.4);
+   context.strokeStyle = context.fillStyle = spark.color;
+   context.lineWidth = spark.size;
+   context.beginPath();
+   context.moveTo(oldX, oldY);
+   context.lineTo(spark.x, spark.y);
+   context.stroke();
+   context.beginPath();
+   context.arc(spark.x, spark.y, spark.size * .65, 0, Math.PI * 2);
+   context.fill();
+  }
+  context.globalAlpha = 1;
+  frame = requestAnimationFrame(tick);
+ }
+
+ function refresh() {
+  if (!complete || !context || document.hidden) { stop(); return; }
+  canvas.hidden = false;
+  resize();
+  if (chartReducedMotion.matches) {
+   if (frame) cancelAnimationFrame(frame);
+   frame = lastTime = nextLaunch = 0;
+   rockets.length = sparks.length = 0;
+   drawStatic();
+  } else if (!frame) {
+   lastTime = nextLaunch = 0;
+   frame = requestAnimationFrame(tick);
+  }
+ }
+
+ window.addEventListener("resize", () => { if (complete) refresh(); });
+ document.addEventListener("visibilitychange", refresh);
+ window.addEventListener("pagehide", stop);
+ window.addEventListener("pageshow", refresh);
+ chartReducedMotion.addEventListener("change", refresh);
+ return { update(value) { complete = Boolean(value); refresh(); } };
+})();
 
 function applyTheme(theme) {
  document.documentElement.dataset.theme = theme;
@@ -265,6 +427,7 @@ let position = loadPosition();
 
 function renderStatistics() {
  if (!recordsReadable) {
+  completionFireworks.update(false);
   $("vDone").textContent = "— / " + BASE.length;
   $("vPct").textContent = "—";
   $("vHours").textContent = "— / " + minutes(totalSeconds);
@@ -281,6 +444,8 @@ function renderStatistics() {
  $("vLeft").textContent = BASE.length - completed.length;
  $("progressFill").style.width = percent + "%";
  $("progressBar").setAttribute("aria-valuenow", percent.toFixed(1));
+ // 用未四舍五入的秒数判定，避免 99.95% 显示为 100.0% 时提前庆祝。
+ completionFireworks.update(totalSeconds > 0 && learned === totalSeconds);
 }
 
 // Forecast the exact selected prefix independently of manual records and list filters.
