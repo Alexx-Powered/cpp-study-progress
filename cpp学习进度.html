@@ -81,7 +81,35 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 .completion-fireworks { position:fixed; inset:0; width:100%; height:100%; z-index:30; pointer-events:none; }
 .completion-fireworks[hidden] { display:none; }
 /* JSON 备份入口只占用现有操作栏；手动复制框仅在自动复制受阻时出现。 */
-.backup-button { margin-left:auto; height:27px; padding:0 9px; font-size:12px; white-space:nowrap; }
+/* 两行共用操作列宽和控件高度，让 JSON 按钮与记录按钮对齐。 */
+#dailyControls {
+ --daily-action-width:132px; --daily-control-height:37px;
+ --daily-date-width:180px; --daily-control-gap:9px;
+ --daily-control-font:14px; --daily-control-padding:10px;
+ --daily-switch-width:42px; --daily-switch-height:24px;
+}
+#dailyControls .entry-form { grid-template-columns:var(--daily-date-width) minmax(0,1fr) repeat(2,var(--daily-action-width)); gap:var(--daily-control-gap); }
+#dailyControls .day-filter { display:grid; grid-template-columns:minmax(0,1fr) repeat(2,var(--daily-action-width)); gap:var(--daily-control-gap); }
+.day-filter-switches { display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px; min-width:0; }
+#dailyControls .entry-form input,
+#dailyControls .entry-form>button,
+#dailyControls .backup-button { height:var(--daily-control-height); padding:0 var(--daily-control-padding); font-size:var(--daily-control-font); }
+#dailyControls .entry-form>button,
+#dailyControls .backup-button { width:100%; margin:0; white-space:nowrap; }
+#dailyControls .day-filter-toggle { height:var(--daily-control-height); gap:8px; font-size:var(--daily-control-font); white-space:nowrap; }
+#dailyControls .switch-track { flex:0 0 auto; width:var(--daily-switch-width); height:var(--daily-switch-height); }
+#dailyControls .switch-track::after { width:calc(var(--daily-switch-height) - 6px); height:calc(var(--daily-switch-height) - 6px); }
+#dailyControls .day-filter-toggle[aria-checked=true] .switch-track::after { transform:translateX(calc(var(--daily-switch-width) - var(--daily-switch-height))); }
+@media(max-width:900px) { #dailyControls { --daily-date-width:160px; } }
+@media(max-width:600px) {
+ #dailyControls { --daily-control-height:33px; --daily-control-gap:6px; --daily-control-font:12px; --daily-control-padding:7px; --daily-switch-width:38px; --daily-switch-height:22px; }
+ #dailyControls .entry-form,#dailyControls .day-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .day-filter-switches { grid-column:1/-1; gap:6px 12px; }
+}
+@media(max-height:650px) {
+ #dailyControls { --daily-control-height:29px; --daily-control-gap:6px; --daily-control-font:12px; --daily-switch-width:36px; --daily-switch-height:20px; }
+}
+@media(max-height:650px) and (min-width:601px) { #dailyControls { --daily-date-width:145px; } }
 .backup-dialog { width:min(720px,calc(100vw - 24px)); max-height:calc(100vh - 24px); padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); box-shadow:0 16px 60px #0003; }
 .backup-dialog::backdrop { background:#0006; }
 .backup-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
@@ -124,8 +152,10 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
  </form>
  <div class="preview" id="entryPreview" aria-live="polite" hidden></div>
  <div class="day-filter">
+  <div class="day-filter-switches">
   <button id="hideIdleDays" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="过滤未学习日期" aria-controls="dailyChart dailyRecords" aria-describedby="dayFilterHint"><span class="switch-track" aria-hidden="true"></span><span>过滤未学习日期</span></button>
   <button id="showReview" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="显示跨天复习" aria-controls="dailyChart" aria-describedby="reviewDisplayHint"><span class="switch-track" aria-hidden="true"></span><span>显示跨天复习</span></button>
+  </div>
   <button id="copyBackup" class="backup-button" type="button" title="备份已保存的学习记录、预览位置和显示设置">复制 JSON 备份</button>
   <button id="importBackup" class="backup-button backup-import" type="button">导入 JSON</button>
   <span class="note" id="dayFilterHint" hidden></span>
