@@ -24,6 +24,8 @@
 - 预览位置：0 表示未选，n 表示前面的 P1～Pn 全部勾选。
 - 课程完成进度按分集去重、按原始秒数计算；每日学习分钟包含跨天复习。
 - 学习记录由浏览器 localStorage 保存，本文件内保留的是课程元数据。
+- “复制 JSON 备份”导出已保存记录、预览位置、偏好及课程信息；不包含表单草稿。
+- “导入 JSON”支持粘贴或文件；校验同一课程并确认后替换数据，写入失败会回滚。
 -->
 <head>
 <meta charset="UTF-8">
@@ -877,6 +879,18 @@ button.danger {
 /* 透明庆祝层：不遮挡点击，不参与布局。 */
 .completion-fireworks { position:fixed; inset:0; width:100%; height:100%; z-index:30; pointer-events:none; }
 .completion-fireworks[hidden] { display:none; }
+/* JSON 备份入口只占用现有操作栏；手动复制框仅在自动复制受阻时出现。 */
+.backup-button { margin-left:auto; height:27px; padding:0 9px; font-size:12px; white-space:nowrap; }
+.backup-dialog { width:min(720px,calc(100vw - 24px)); max-height:calc(100vh - 24px); padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); box-shadow:0 16px 60px #0003; }
+.backup-dialog::backdrop { background:#0006; }
+.backup-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.backup-heading h2 { margin:0; font-size:17px; }
+.backup-dialog textarea { display:block; width:100%; height:min(360px,50vh); padding:10px; border:1px solid var(--control-border); border-radius:6px; resize:vertical; background:var(--bg); color:var(--ink); font:12px/1.6 ui-monospace,Consolas,monospace; }
+.backup-dialog p { margin:10px 0 0; font-size:12px; color:var(--muted); }
+.backup-button.backup-import { margin-left:0; }
+.restore-file { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; font-size:13px; }
+.restore-file input { max-width:100%; min-width:0; font-size:12px; }
+.restore-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
 </style>
 </head>
 <body>
@@ -913,6 +927,8 @@ button.danger {
  <div class="day-filter">
   <button id="hideIdleDays" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="过滤未学习日期" aria-controls="dailyChart dailyRecords" aria-describedby="dayFilterHint"><span class="switch-track" aria-hidden="true"></span><span>过滤未学习日期</span></button>
   <button id="showReview" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="显示跨天复习" aria-controls="dailyChart" aria-describedby="reviewDisplayHint"><span class="switch-track" aria-hidden="true"></span><span>显示跨天复习</span></button>
+  <button id="copyBackup" class="backup-button" type="button" title="备份已保存的学习记录、预览位置和显示设置">复制 JSON 备份</button>
+  <button id="importBackup" class="backup-button backup-import" type="button">导入 JSON</button>
   <span class="note" id="dayFilterHint" hidden></span>
  </div>
 </div>
@@ -953,6 +969,19 @@ button.danger {
 <!-- 分集内容由 renderList() 动态生成，DOM 中的 ID 与脚本保持一致。 -->
 <section class="panel list" id="list" tabindex="0" role="tabpanel" aria-labelledby="browseTab" hidden></section>
 </main>
+<dialog id="restoreDialog" class="backup-dialog" aria-labelledby="restoreTitle" aria-describedby="restoreHint">
+ <div class="backup-heading"><h2 id="restoreTitle">导入 JSON</h2><button id="closeRestore" type="button">关闭</button></div>
+ <label class="restore-file"><span>选择备份文件</span><input id="restoreFile" type="file" accept=".json,application/json"></label>
+ <textarea id="restoreText" spellcheck="false" placeholder="也可直接粘贴 JSON 备份。" aria-label="待导入的 JSON 备份"></textarea>
+ <p id="restoreHint">确认后替换当前课程的记录和设置，并清空未保存输入。建议先复制当前备份。</p>
+ <div class="message" id="restoreMessage" role="status" aria-live="polite" hidden></div>
+ <div class="restore-actions"><button id="cancelRestore" type="button">取消</button><button id="confirmRestore" class="primary" type="button">检查并导入</button></div>
+</dialog>
+<dialog id="backupDialog" class="backup-dialog" aria-labelledby="backupTitle" aria-describedby="backupHint">
+ <div class="backup-heading"><h2 id="backupTitle">JSON 备份</h2><button id="closeBackup" type="button">关闭</button></div>
+ <textarea id="backupText" readonly spellcheck="false" aria-label="JSON 备份内容"></textarea>
+ <p id="backupHint">请复制框内内容，粘贴保存为 .json 文件。</p>
+</dialog>
 <script>
 /*
 【分集数据 BASE】顺序就是 P 编号，必须至少有一集。
@@ -1488,6 +1517,210 @@ function showMessage(text, error = false, scope = "daily") {
  message.textContent = text;
  message.className = "message" + (error ? " error" : "");
  message.hidden = !text;
+}
+
+// 【JSON 备份】只导出当前课程的已保存数据；不读取其他课程或整个 localStorage。
+function serializeProgressBackup() {
+ if (!recordsReadable) throw new Error("学习记录读取失败，暂时无法生成完整备份。");
+ return JSON.stringify({
+  type: "learning-progress-backup",
+  version: 1,
+  exportedAt: new Date().toISOString(),
+  course: { title: TITLE, url: $("subtitle").querySelector("a").href, totalEpisodes: BASE.length, totalSeconds },
+  records: records.map(record => ({ date: record.date, episodes: [...record.episodes] })),
+  position,
+  preferences: { theme: document.documentElement.dataset.theme, hideIdleDays, showReview },
+  storageKeys: { records: LOG_KEY, position: POSITION_KEY, theme: THEME_KEY, hideIdleDays: IDLE_FILTER_KEY, showReview: REVIEW_DISPLAY_KEY }
+ }, null, 2);
+}
+
+// 本地文件或权限限制时尝试传统复制；临时文本框不会改变表单和学习记录。
+function copyBackupLegacy(text) {
+ const previousFocus = document.activeElement;
+ const field = document.createElement("textarea");
+ field.value = text;
+ field.readOnly = true;
+ field.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px";
+ document.body.append(field);
+ let copied = false;
+ try {
+  field.focus({ preventScroll: true });
+  field.select();
+  field.setSelectionRange(0, text.length);
+  copied = document.execCommand("copy") === true;
+ } catch (error) { /* 自动复制仍不可用时显示可手动复制的文本。 */ }
+ finally {
+  field.remove();
+  if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+ }
+ return copied;
+}
+
+async function copyProgressBackup() {
+ const button = $("copyBackup");
+ if (button.disabled) return;
+ button.disabled = true;
+ try {
+  const text = serializeProgressBackup();
+  let copied = false;
+  if (window.isSecureContext && typeof navigator.clipboard?.writeText === "function") {
+   try { await navigator.clipboard.writeText(text); copied = true; }
+   catch (error) { /* 拒绝权限不会丢弃备份；继续尝试本地文件兼容路径。 */ }
+  }
+  if (!copied) copied = copyBackupLegacy(text);
+  if (copied) {
+   showMessage("JSON 备份已复制，粘贴保存为 .json 文件即可。");
+  } else {
+   const dialog = $("backupDialog"), field = $("backupText");
+   field.value = text; // 用 value 而非 innerHTML，课程标题始终按纯文本处理。
+   if (!dialog.open) dialog.showModal();
+   field.focus();
+   field.select();
+   showMessage("自动复制未成功，请在弹出的备份框中手动复制。");
+  }
+ } catch (error) {
+  showMessage(error.message || "备份失败，请重试。", true);
+ } finally {
+  button.disabled = false;
+ }
+}
+
+// 【JSON 导入】只接受本格式且属于同一课程的备份；忽略来源 storageKeys，使用当前页面的键。
+const BACKUP_JSON_LIMIT = 2 * 1024 * 1024;
+let restoreFileReadId = 0;
+
+function restoreNotice(text, error = false) {
+ const message = $("restoreMessage");
+ message.textContent = text;
+ message.className = "message" + (error ? " error" : "");
+ message.hidden = !text;
+}
+
+function validateProgressBackup(text) {
+ if (text.length > BACKUP_JSON_LIMIT) throw new Error("备份超过 2 MB，无法导入。");
+ let backup;
+ try { backup = JSON.parse(text.replace(/^\uFEFF/, "").trim()); }
+ catch (error) { throw new Error("JSON 格式无效，请粘贴完整的备份内容。"); }
+ if (!backup || backup.type !== "learning-progress-backup" || backup.version !== 1) throw new Error("不是受支持的学习进度备份。");
+ const course = backup.course;
+ const courseIdentity = value => {
+  try {
+   const url = new URL(value);
+   if (!["https:", "http:"].includes(url.protocol)) return "";
+   return url.hostname.toLowerCase().replace(/^www\./, "") + url.pathname.replace(/\/+$/, "");
+  } catch (error) { return ""; }
+ };
+ const identity = courseIdentity(course?.url);
+ if (!identity || identity !== courseIdentity($("subtitle").querySelector("a").href) ||
+     course.totalEpisodes !== BASE.length || course.totalSeconds !== totalSeconds) {
+  throw new Error("备份不属于当前课程，或分集与时长不一致，未导入。");
+ }
+ if (!Array.isArray(backup.records)) throw new Error("备份缺少每日学习记录。");
+ const dates = new Set();
+ const importedRecords = backup.records.map(record => {
+  if (!record || !validDate(record.date) || dates.has(record.date) || !Array.isArray(record.episodes) ||
+      !record.episodes.length || record.episodes.some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) {
+   throw new Error("备份包含无效日期、重复日期或超出范围的分集。");
+  }
+  dates.add(record.date);
+  return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b) };
+ }).sort((a, b) => b.date.localeCompare(a.date));
+ if (!Number.isInteger(backup.position) || backup.position < 0 || backup.position > BASE.length) throw new Error("备份的预览位置无效。");
+ const preferences = backup.preferences;
+ if (!preferences || !["light", "dark"].includes(preferences.theme) ||
+     typeof preferences.hideIdleDays !== "boolean" || typeof preferences.showReview !== "boolean") {
+  throw new Error("备份的显示设置无效。");
+ }
+ return { records: importedRecords, position: backup.position, preferences: {
+  theme: preferences.theme, hideIdleDays: preferences.hideIdleDays, showReview: preferences.showReview
+ } };
+}
+
+function applyProgressBackup(backup) {
+ // 学习记录最后写入；任何前置步骤失败都不触碰实际学习记录。
+ const writes = [
+  [POSITION_KEY, JSON.stringify(backup.position)],
+  [THEME_KEY, backup.preferences.theme],
+  [IDLE_FILTER_KEY, String(backup.preferences.hideIdleDays)],
+  [REVIEW_DISPLAY_KEY, String(backup.preferences.showReview)],
+  [LOG_KEY, JSON.stringify({ version: 1, records: backup.records })]
+ ];
+ let previous;
+ try { previous = writes.map(([key]) => [key, localStorage.getItem(key)]); }
+ catch (error) { throw new Error("浏览器存储不可用，未导入。"); }
+ let applied = 0;
+ try {
+  for (const [key, value] of writes) { localStorage.setItem(key, value); applied++; }
+ } catch (error) {
+  let restored = true;
+  for (let i = applied - 1; i >= 0; i--) {
+   const [key, value] = previous[i];
+   try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+   catch (rollbackError) { restored = false; }
+  }
+  throw new Error(restored ? "导入失败：存储不可用或已满，原数据未改变。" : "导入失败，学习记录未替换，但部分显示设置未能恢复。请保留备份后重试。");
+ }
+ // 只有全部存储操作成功后才更新界面，避免显示未成功保存的导入结果。
+ records = backup.records;
+ recordsReadable = true;
+ position = backup.position;
+ hideIdleDays = backup.preferences.hideIdleDays;
+ showReview = backup.preferences.showReview;
+ $("saveRecord").disabled = false;
+ $("progressBar").removeAttribute("aria-valuetext");
+ $("themeNotice").hidden = true;
+ applyTheme(backup.preferences.theme);
+ clearForm();
+ renderStatistics();
+ renderDailyRecords(true);
+ renderList();
+ showMessage("已导入 " + records.length + " 天学习记录及设置。");
+}
+
+function openRestoreDialog() {
+ restoreFileReadId++;
+ $("restoreFile").value = "";
+ $("restoreText").value = "";
+ $("restoreText").disabled = false;
+ $("confirmRestore").disabled = false;
+ restoreNotice("");
+ $("restoreDialog").showModal();
+ $("restoreText").focus();
+}
+
+async function readRestoreFile() {
+ const file = $("restoreFile").files[0];
+ if (!file) return;
+ const id = ++restoreFileReadId;
+ $("restoreText").value = "";
+ $("restoreText").disabled = $("confirmRestore").disabled = false;
+ if (file.size > BACKUP_JSON_LIMIT) { restoreNotice("备份文件超过 2 MB，无法导入。", true); return; }
+ $("restoreText").disabled = $("confirmRestore").disabled = true;
+ restoreNotice("正在读取备份文件…");
+ try {
+  const text = await file.text();
+  if (id === restoreFileReadId && $("restoreDialog").open) {
+   $("restoreText").value = text;
+   restoreNotice("文件已读取，点击“检查并导入”。");
+  }
+ } catch (error) {
+  if (id === restoreFileReadId) restoreNotice("文件读取失败，请重试或直接粘贴 JSON。", true);
+ } finally {
+  if (id === restoreFileReadId) $("restoreText").disabled = $("confirmRestore").disabled = false;
+ }
+}
+
+function confirmProgressRestore() {
+ if ($("confirmRestore").disabled) return;
+ try {
+  const backup = validateProgressBackup($("restoreText").value);
+  const summary = "确认导入？\n当前 " + records.length + " 天记录 → 备份 " + backup.records.length + " 天记录。\n将替换当前课程的学习记录、预览位置和显示设置，并清空未保存输入。";
+  if (!confirm(summary)) { restoreNotice("已取消，原数据未改变。"); return; }
+  applyProgressBackup(backup);
+  $("restoreDialog").close();
+ } catch (error) {
+  restoreNotice(error.message || "导入失败，未修改数据。", true);
+ }
 }
 
 // 校验真实日历日期；UTC 往返比对可以排除 2 月 30 日等非法输入。
@@ -2160,6 +2393,15 @@ $("recordDate").addEventListener("change", () => {
 });
 $("recordEpisodes").addEventListener("input", updatePreview);
 $("clearForm").addEventListener("click", () => { clearForm(); if (recordsReadable) showMessage(""); });
+$("copyBackup").addEventListener("click", copyProgressBackup);
+$("closeBackup").addEventListener("click", () => $("backupDialog").close());
+$("backupDialog").addEventListener("close", () => $("copyBackup").focus({ preventScroll: true }));
+$("importBackup").addEventListener("click", openRestoreDialog);
+$("restoreFile").addEventListener("change", readRestoreFile);
+$("restoreText").addEventListener("input", () => restoreNotice(""));
+$("confirmRestore").addEventListener("click", confirmProgressRestore);
+for (const id of ["closeRestore", "cancelRestore"]) $(id).addEventListener("click", () => $("restoreDialog").close());
+$("restoreDialog").addEventListener("close", () => { restoreFileReadId++; $("importBackup").focus({ preventScroll: true }); });
 // 事件委托：补记只填入日期，修改载入原分集，删除须用户确认后再保存。
 $("dailyRecords").addEventListener("click", event => {
  const button = event.target.closest("button[data-action]");
