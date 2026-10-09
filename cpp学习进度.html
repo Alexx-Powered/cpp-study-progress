@@ -83,7 +83,7 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 /* JSON 备份入口只占用现有操作栏；手动复制框仅在自动复制受阻时出现。 */
 /* 两行共用操作列宽和控件高度，让 JSON 按钮与记录按钮对齐。 */
 #dailyControls {
- --daily-action-width:132px; --daily-control-height:37px;
+ --daily-action-width:calc(6 * var(--daily-control-font) + 2 * var(--daily-control-padding) + 8px); --daily-control-height:37px;
  --daily-date-width:180px; --daily-control-gap:9px;
  --daily-control-font:14px; --daily-control-padding:10px;
  --daily-switch-width:42px; --daily-switch-height:24px;
@@ -95,7 +95,7 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 #dailyControls .entry-form>button,
 #dailyControls .backup-button { height:var(--daily-control-height); padding:0 var(--daily-control-padding); font-size:var(--daily-control-font); }
 #dailyControls .entry-form>button,
-#dailyControls .backup-button { width:100%; margin:0; white-space:nowrap; }
+#dailyControls .backup-button { width:var(--daily-action-width); margin:0; white-space:nowrap; }
 #dailyControls .day-filter-toggle { height:var(--daily-control-height); gap:8px; font-size:var(--daily-control-font); white-space:nowrap; }
 #dailyControls .switch-track { flex:0 0 auto; width:var(--daily-switch-width); height:var(--daily-switch-height); }
 #dailyControls .switch-track::after { width:calc(var(--daily-switch-height) - 6px); height:calc(var(--daily-switch-height) - 6px); }
@@ -104,6 +104,8 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 @media(max-width:600px) {
  #dailyControls { --daily-control-height:33px; --daily-control-gap:6px; --daily-control-font:12px; --daily-control-padding:7px; --daily-switch-width:38px; --daily-switch-height:22px; }
  #dailyControls .entry-form,#dailyControls .day-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ #dailyControls .entry-form>button,#dailyControls .backup-button { grid-column:1/-1; grid-row:2; justify-self:end; }
+ #dailyControls #saveRecord,#dailyControls #copyBackup { margin-right:calc(var(--daily-action-width) + var(--daily-control-gap)); }
  .day-filter-switches { grid-column:1/-1; gap:6px 12px; }
 }
 @media(max-height:650px) {
@@ -156,7 +158,7 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
   <button id="hideIdleDays" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="过滤未学习日期" aria-controls="dailyChart dailyRecords" aria-describedby="dayFilterHint"><span class="switch-track" aria-hidden="true"></span><span>过滤未学习日期</span></button>
   <button id="showReview" class="day-filter-toggle" type="button" role="switch" aria-checked="true" aria-label="显示跨天复习" aria-controls="dailyChart" aria-describedby="reviewDisplayHint"><span class="switch-track" aria-hidden="true"></span><span>显示跨天复习</span></button>
   </div>
-  <button id="copyBackup" class="backup-button" type="button" title="备份已保存的学习记录、预览位置和显示设置">复制 JSON 备份</button>
+  <button id="copyBackup" class="backup-button" type="button" title="复制 JSON 备份，包含已保存的学习记录、预览位置和显示设置">导出 JSON</button>
   <button id="importBackup" class="backup-button backup-import" type="button">导入 JSON</button>
   <span class="note" id="dayFilterHint" hidden></span>
  </div>
