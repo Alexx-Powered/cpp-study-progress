@@ -1395,16 +1395,16 @@ const completionFireworks = (() => {
  }
 
  function burst(rocket) {
-  const count = width < 600 ? 48 : 72;
-  const speed = Math.min(width, height, 800) * .22;
-  for (let i = 0; i < count && sparks.length < 360; i++) {
+  const count = width < 600 ? 60 : 88;
+  const speed = Math.min(width, height, 800) * .28;
+  for (let i = 0; i < count && sparks.length < 480; i++) {
    const angle = Math.PI * 2 * i / count + random(-.035, .035);
    const velocity = speed * random(.45, 1);
    sparks.push({
     x: rocket.endX, y: rocket.endY,
     vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
-    age: 0, life: random(1.35, 2),
-    color: rocket.palette[i % rocket.palette.length], size: random(1.1, 2.1)
+    age: 0, life: random(1.5, 2.15),
+    color: rocket.palette[i % rocket.palette.length], size: random(1.3, 2.4)
    });
   }
  }
@@ -1412,11 +1412,11 @@ const completionFireworks = (() => {
  function drawStatic() {
   context.clearRect(0, 0, width, height);
   context.globalAlpha = .8;
-  for (let n = 0; n < 3; n++) {
-   const x = width * (.22 + n * .28), y = height * (.22 + (n % 2) * .12);
-   const radius = Math.min(width, height) * .075;
-   for (let i = 0; i < 20; i++) {
-    const angle = Math.PI * 2 * i / 20;
+  for (let n = 0; n < 4; n++) {
+   const x = width * (.15 + n * .23), y = height * (.20 + (n % 2) * .13);
+   const radius = Math.min(width, height) * .095;
+   for (let i = 0; i < 24; i++) {
+    const angle = Math.PI * 2 * i / 24;
     context.strokeStyle = palettes[n][i % 3];
     context.lineWidth = 2;
     context.beginPath();
@@ -1436,7 +1436,7 @@ const completionFireworks = (() => {
   context.clearRect(0, 0, width, height);
   if (time >= nextLaunch) {
    launch();
-   nextLaunch = time + random(950, 1350);
+   nextLaunch = time + random(650, 950);
   }
   for (let i = rockets.length - 1; i >= 0; i--) {
    const rocket = rockets[i];
