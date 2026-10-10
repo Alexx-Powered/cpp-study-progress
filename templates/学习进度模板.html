@@ -8,7 +8,8 @@
 1. 复制本文件，用 UTF-8 编码保存为新课程的 HTML，可直接用浏览器打开。
 2. 修改下方 TEMPLATE_CONFIG：课程名称、来源链接、独立的 storagePrefix。
    每门课程或每份独立进度使用不同前缀；已开始记录后保持前缀稳定。
-3. 修改【分集数据 BASE】：按实际播放顺序填写 title、duration、stage。
+3. 修改【分集数据 BASE】：按实际播放顺序填写 title、duration；stage 可选。
+   未指定阶段时，从标题中的章节或重复主题前缀自动生成；已有阶段保持不变。
    数组第 1 项对应 P1；总集数、阶段筛选、总时长会自动计算。
    已有进度后若重排或替换课程分集，应为新版本换一个存储前缀。
 4. 其他平台的分集链接，可修改 buildEpisodeUrl() 的链接规则。
@@ -1017,7 +1018,7 @@ button.danger {
 <script>
 /*
 【分集数据 BASE】顺序就是 P 编号，必须至少有一集。
-title：分集标题；duration：mm:ss（也支持 hh:mm:ss）；stage：阶段名称。
+title：分集标题；duration：mm:ss（也支持 hh:mm:ss）；stage：可选阶段名称，缺省时按标题自动识别。
 保留原始时长，计算时转为秒，只在展示时四舍五入到一位小数分钟。
 示例：{ "title": "01 课程介绍", "duration": "03:35", "stage": "基础入门" }
 下面保留完整参考课程，便于直接使用或逐阶段替换。
@@ -1351,6 +1352,41 @@ const BASE = [
 点击预览 → position → 预览卡片与前缀勾选。
 图表开关仅改变显示与偏好，不写入每日记录。
 */
+// 只提取原标题中的章节或重复主题前缀；已有人工阶段优先，未知标题不继承上一集。
+function inferLessonStages(lessons) {
+ const fallback = "课程分集";
+ const details = lessons.map(lesson => {
+  const text = String(lesson.title || "").trim()
+   .replace(/^(?:(?:P|EP|课时)\s*)?\d+(?:[.．-]\d+)*[.．、:：)）\s_-]+/i, "")
+   .replace(/^第\s*[0-9一二三四五六七八九十百零〇两]+\s*[课讲][.．、:：\s-]*/, "");
+  const heading = text.match(/^(第\s*[0-9一二三四五六七八九十百零〇两]+\s*(?:阶段|章|篇|部分|模块)|(?:chapter|module|part|stage)\s+[0-9IVX]+\b)/i);
+  const bracket = text.match(/^[【\[]([^】\]]+)[】\]]/);
+  let cut = text.length, depth = 0;
+  for (let i = 0; i < text.length; i++) {
+   if (/[（(【\[]/.test(text[i])) depth++;
+   else if (/[）)】\]]/.test(text[i])) depth = Math.max(0, depth - 1);
+   else if (!depth && /[-‐‑–—_:：|｜]/.test(text[i])) { cut = i; break; }
+  }
+  const prefix = heading ? heading[1].replace(/\s+/g, heading[1].startsWith("第") ? "" : " ")
+   : bracket ? bracket[1].trim() : text.slice(0, cut).trim();
+  const usable = prefix.length >= 2 && prefix.length <= 60;
+  return { text, prefix, usable, heading: !!heading, structured: cut < text.length || !!bracket };
+ });
+ const counts = new Map();
+ for (const item of details) {
+  if (item.usable && (item.structured || item.heading)) counts.set(item.prefix, (counts.get(item.prefix) || 0) + 1);
+ }
+ return lessons.map((lesson, index) => {
+  if (typeof lesson.stage === "string" && lesson.stage.trim() && lesson.stage.trim() !== fallback) return lesson.stage;
+  const item = details[index];
+  const opening = index === 0 && /课程导学|课程介绍|课程导览|课程概述/.test(item.text);
+  const closing = index === lessons.length - 1 && /感恩同行|后会有期|课程总结|结束语|结课|课程结束/.test(item.text);
+  if (item.usable && (item.heading || (item.structured && counts.get(item.prefix) >= 2) || opening || closing)) return item.prefix;
+  return fallback;
+ });
+}
+const inferredStages = inferLessonStages(BASE);
+BASE.forEach((episode, index) => { episode.stage = inferredStages[index]; });
 const $ = id => document.getElementById(id);
 // 每类状态单独保存；修改配置前缀即可为另一课程建立独立记录。
 const LOG_KEY = TEMPLATE_CONFIG.storagePrefix + "-daily-records-v1";
