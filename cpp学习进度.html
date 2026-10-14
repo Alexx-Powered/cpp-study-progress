@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title id="pageTitle"></title>
+<link id="courseIcon" rel="icon" type="image/svg+xml" href="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%231769aa%22%20d%3D%22M16%201%2030%209v14l-14%208L2%2023V9z%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22M19%209a10%2010%200%201%200%200%2014l-3-3a6%206%200%201%201%200-8z%22%2F%3E%3Cpath%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22%20d%3D%22M21%2013v6m-3-3h6m4-3v6m-3-3h6%22%2F%3E%3C%2Fsvg%3E">
 <script>
 // Restore the preference before the first paint without touching study data.
 const THEME_KEY = "cpp-study-theme-v1";
@@ -253,6 +254,18 @@ const POSITION_KEY = "cpp-study-position-v1";
 const IDLE_FILTER_KEY = "cpp-study-hide-idle-days-v1";
 const REVIEW_DISPLAY_KEY = "cpp-study-show-review-v1";
 const TITLE = "黑马程序员匠心之作｜C++教程从0到1入门编程";
+// 图标内嵌在 HTML 中；根据课程标题选择，离线打开也可显示。
+function applyCourseIcon(title) {
+ const icons = {
+ "cpp": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path fill=\"#1769aa\" d=\"M16 1 30 9v14l-14 8L2 23V9z\"/><path fill=\"#fff\" d=\"M19 9a10 10 0 1 0 0 14l-3-3a6 6 0 1 1 0-8z\"/><path stroke=\"#fff\" stroke-width=\"2\" d=\"M21 13v6m-3-3h6m4-3v6m-3-3h6\"/></svg>",
+ "python": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><path id=\"snake\" fill=\"#3776ab\" d=\"M16 2c-6 0-8 1-8 5v3h9v2H6c-4 0-5 3-5 6s1 6 5 6h3v-4c0-3 2-5 5-5h8c3 0 4-2 4-5V7c0-4-4-5-10-5z\"/><path fill=\"#ffd343\" d=\"M16 30c6 0 8-1 8-5v-3h-9v-2h11c4 0 5-3 5-6s-1-6-5-6h-3v4c0 3-2 5-5 5h-8c-3 0-4 2-4 5v3c0 4 4 5 10 5z\"/><circle cx=\"12\" cy=\"6\" r=\"1.5\" fill=\"#fff\"/><circle cx=\"20\" cy=\"26\" r=\"1.5\" fill=\"#fff\"/></svg>",
+ "book": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><rect x=\"1\" y=\"1\" width=\"30\" height=\"30\" rx=\"7\" fill=\"#2563eb\"/><path fill=\"#fff\" d=\"M5 7h7c2 0 3 1 4 2 1-1 2-2 4-2h7v18h-7c-2 0-3 1-4 2-1-1-2-2-4-2H5z\"/><path stroke=\"#2563eb\" stroke-width=\"2\" d=\"M16 10v14\"/></svg>"
+};
+ const match = String(title).match(/python|c\+\+|c＋＋/i);
+ const kind = match ? (/python/i.test(match[0]) ? "python" : "cpp") : "book";
+ document.getElementById("courseIcon").href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(icons[kind]);
+}
+applyCourseIcon(TITLE);
 const durations = BASE.map(x => x.duration.split(":").reduce((s, n) => s * 60 + Number(n), 0));
 const totalSeconds = durations.reduce((sum, n) => sum + n, 0);
 const minutes = seconds => (seconds / 60).toFixed(1) + " 分钟";
