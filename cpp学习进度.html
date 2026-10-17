@@ -123,6 +123,7 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 .restore-file { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; font-size:13px; }
 .restore-file input { max-width:100%; min-width:0; font-size:12px; }
 .restore-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.record-skipped { display:block; color:var(--muted); font-size:12px; }
 </style>
 </head>
 <body>
@@ -140,7 +141,7 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 <div class="message error" id="themeNotice" role="status" hidden></div>
 <div id="dailyHeader">
 <section class="stats" aria-label="手动记录统计">
- <div class="card"><div class="label">已学集数 / 总集数</div><div class="value" id="vDone"></div></div>
+ <div class="card"><div class="label" title="已学与跳过的分集去重计算">完成集数 / 总集数</div><div class="value" id="vDone"></div></div>
  <div class="card"><div class="label">完成比例（按时长）</div><div class="value" id="vPct"></div></div>
  <div class="card"><div class="label">已学分钟 / 总分钟</div><div class="value" id="vHours"></div></div>
  <div class="card"><div class="label">剩余集数</div><div class="value" id="vLeft"></div></div>
@@ -149,10 +150,11 @@ button{cursor:pointer}button:hover{border-color:var(--blue)}button.primary{backg
 <div id="dailyControls">
  <form class="entry-form" id="recordForm" novalidate>
   <label class="field"><span>学习日期</span><input id="recordDate" type="date" required></label>
-  <label class="field"><span>学习分集（P1～P314）</span><input id="recordEpisodes" type="text" required autocomplete="off" placeholder="例如 1-10, 15" aria-describedby="entryPreview"></label>
+  <label class="field"><span>学习分集（P1～P314）</span><input id="recordEpisodes" type="text" required autocomplete="off" placeholder="例如 1-10, ~11-15" aria-describedby="episodeInputHint entryPreview"></label>
   <button class="primary" id="saveRecord" type="submit">保存当天记录</button>
   <button id="clearForm" type="button">清空输入</button>
  </form>
+ <div class="note" id="episodeInputHint">~ 标记跳过，例如 ~11-15；计入进度，不计学习时间。</div>
  <div class="preview" id="entryPreview" aria-live="polite" hidden></div>
  <div class="day-filter">
   <div class="day-filter-switches">
@@ -282,7 +284,7 @@ const CHART_TRANSITION_MS = 420;
 let chartMotion = null;
 let chartNeedsRender = false;
 
-// 【完成烟花】只由实际统计的整数秒数触发；透明画布不拦截任何操作。
+// 【完成烟花】由手动记录的完成秒数（含跳过）触发；透明画布不拦截任何操作。
 // 达到 100% 后循环发射，进度回落立即停止；后台暂停，返回或刷新后恢复。
 // 粒子数及设备像素比设上限；系统要求减少动态效果时改为静态烟花。
 const completionFireworks = (() => {
@@ -459,10 +461,10 @@ function serializeProgressBackup() {
  if (!recordsReadable) throw new Error("学习记录读取失败，暂时无法生成完整备份。");
  return JSON.stringify({
   type: "learning-progress-backup",
-  version: 1,
+  version: 2,
   exportedAt: new Date().toISOString(),
   course: { title: TITLE, url: $("subtitle").querySelector("a").href, totalEpisodes: BASE.length, totalSeconds },
-  records: records.map(record => ({ date: record.date, episodes: [...record.episodes] })),
+  records: records.map(record => ({ date: record.date, episodes: [...record.episodes], skipped: [...record.skipped] })),
   position,
   preferences: { theme: document.documentElement.dataset.theme, hideIdleDays, showReview },
   storageKeys: { records: LOG_KEY, position: POSITION_KEY, theme: THEME_KEY, hideIdleDays: IDLE_FILTER_KEY, showReview: REVIEW_DISPLAY_KEY }
@@ -536,7 +538,7 @@ function validateProgressBackup(text) {
  let backup;
  try { backup = JSON.parse(text.replace(/^\uFEFF/, "").trim()); }
  catch (error) { throw new Error("JSON 格式无效，请粘贴完整的备份内容。"); }
- if (!backup || backup.type !== "learning-progress-backup" || backup.version !== 1) throw new Error("不是受支持的学习进度备份。");
+ if (!backup || backup.type !== "learning-progress-backup" || ![1, 2].includes(backup.version)) throw new Error("不是受支持的学习进度备份。");
  const course = backup.course;
  const courseIdentity = value => {
   try {
@@ -553,12 +555,10 @@ function validateProgressBackup(text) {
  if (!Array.isArray(backup.records)) throw new Error("备份缺少每日学习记录。");
  const dates = new Set();
  const importedRecords = backup.records.map(record => {
-  if (!record || !validDate(record.date) || dates.has(record.date) || !Array.isArray(record.episodes) ||
-      !record.episodes.length || record.episodes.some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) {
-   throw new Error("备份包含无效日期、重复日期或超出范围的分集。");
-  }
+  const normalized = normalizeRecord(record);
+  if (dates.has(record.date)) throw new Error("备份包含重复日期。");
   dates.add(record.date);
-  return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b) };
+  return normalized;
  }).sort((a, b) => b.date.localeCompare(a.date));
  if (!Number.isInteger(backup.position) || backup.position < 0 || backup.position > BASE.length) throw new Error("备份的预览位置无效。");
  const preferences = backup.preferences;
@@ -578,7 +578,7 @@ function applyProgressBackup(backup) {
   [THEME_KEY, backup.preferences.theme],
   [IDLE_FILTER_KEY, String(backup.preferences.hideIdleDays)],
   [REVIEW_DISPLAY_KEY, String(backup.preferences.showReview)],
-  [LOG_KEY, JSON.stringify({ version: 1, records: backup.records })]
+  [LOG_KEY, JSON.stringify({ version: 2, records: backup.records })]
  ];
  let previous;
  try { previous = writes.map(([key]) => [key, localStorage.getItem(key)]); }
@@ -665,22 +665,25 @@ function validDate(value) {
 }
 
 function parseEpisodes(value) {
- const text = value.trim().replace(/[，、；;]/g, ",").replace(/[～~—–至到]/g, "-")
-  .replace(/\b[Pp]\s*(?=\d)/g, "").replace(/\s*-\s*/g, "-");
- if (!text) throw new Error("请填写当天学习的分集编号，例如 1-10, 15。");
+ const text = value.trim().replace(/[，、；;]/g, ",").replace(/～/g, "~").replace(/[—–至到]/g, "-")
+  .replace(/\b[Pp]\s*(?=\d)/g, "").replace(/\s*-\s*/g, "-")
+  .replace(/~\s*(?=\d)/g, "~");
+ if (!text) throw new Error("请填写分集编号，例如 1-10, ~11-15。");
  const tokens = text.split(/[,\s]+/).filter(Boolean);
  if (!tokens.length) throw new Error("请填写有效的分集编号。");
- const episodes = new Set();
+ const episodes = new Set(), skipped = new Set();
  for (const token of tokens) {
-  const match = /^(\d+)(?:-(\d+))?$/.exec(token);
-  if (!match) throw new Error("无法识别“" + token + "”。请使用 1-10, 15 这样的格式。");
-  const start = Number(match[1]), end = Number(match[2] || match[1]);
+  const match = /^(~)?(\d+)(?:([-~])(\d+))?$/.exec(token);
+  if (!match) throw new Error("无法识别“" + token + "”。请使用 1-10, ~11-15，~ 表示跳过。");
+  const start = Number(match[2]), end = Number(match[4] || match[2]);
   if (start < 1 || end > BASE.length || start > end) {
    throw new Error("分集编号须在 1～" + BASE.length + " 之间，范围从小到大填写。");
   }
-  for (let n = start; n <= end; n++) episodes.add(n);
+  const target = match[1] || match[3] === "~" ? skipped : episodes;
+  for (let n = start; n <= end; n++) target.add(n);
  }
- return [...episodes].sort((a, b) => a - b);
+ for (const episode of skipped) episodes.delete(episode);
+ return { episodes: [...episodes].sort((a, b) => a - b), skipped: [...skipped].sort((a, b) => a - b) };
 }
 
 function formatEpisodes(episodes) {
@@ -694,19 +697,34 @@ function formatEpisodes(episodes) {
  return ranges.join(", ");
 }
 
+function formatRecord(record) {
+ return [formatEpisodes(record.episodes), ...formatEpisodes(record.skipped || []).split(", ").filter(Boolean).map(range => "~" + range)].filter(Boolean).join(", ");
+}
+
+function normalizeRecord(record) {
+ const skipped = record?.skipped === undefined ? [] : record.skipped;
+ if (!record || !validDate(record.date) || !Array.isArray(record.episodes) || !Array.isArray(skipped) ||
+     (!record.episodes.length && !skipped.length) || [...record.episodes, ...skipped].some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) {
+  throw new Error("记录包含无效日期、空分集或超出范围的分集。");
+ }
+ const skippedSet = new Set(skipped);
+ if (record.episodes.some(n => skippedSet.has(n))) throw new Error("同一天的已学与跳过分集不能重叠。");
+ return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b), skipped: [...skippedSet].sort((a, b) => a - b) };
+}
+
 // Only explicitly saved daily records feed statistics; legacy checkmarks never do.
 function loadRecords() {
  try {
   const raw = localStorage.getItem(LOG_KEY);
   if (raw === null) return;
   const saved = JSON.parse(raw);
-  if (saved?.version !== 1 || !Array.isArray(saved.records)) throw new Error("invalid records");
+  if (![1, 2].includes(saved?.version) || !Array.isArray(saved.records)) throw new Error("invalid records");
   const dates = new Set();
   const loaded = saved.records.map(record => {
-   if (!record || !validDate(record.date) || dates.has(record.date) || !Array.isArray(record.episodes) || !record.episodes.length ||
-    record.episodes.some(n => !Number.isInteger(n) || n < 1 || n > BASE.length)) throw new Error("invalid record");
+   const normalized = normalizeRecord(record);
+   if (dates.has(record.date)) throw new Error("invalid record");
    dates.add(record.date);
-   return { date: record.date, episodes: [...new Set(record.episodes)].sort((a, b) => a - b) };
+   return normalized;
   });
   records = loaded.sort((a, b) => b.date.localeCompare(a.date));
  } catch (error) {
@@ -746,9 +764,10 @@ function renderStatistics() {
   $("progressBar").setAttribute("aria-valuetext", "每日记录读取失败，统计暂不可用");
   return;
  }
- const completed = [...new Set(records.flatMap(record => record.episodes))];
- const learned = sumSeconds(completed);
- const percent = totalSeconds > 0 ? learned / totalSeconds * 100 : 0;
+ const completed = [...new Set(records.flatMap(record => [...record.episodes, ...record.skipped]))];
+ const learned = sumSeconds([...new Set(records.flatMap(record => record.episodes))]);
+ const completedSeconds = sumSeconds(completed);
+ const percent = totalSeconds > 0 ? completedSeconds / totalSeconds * 100 : 0;
  $("vDone").textContent = completed.length + " / " + BASE.length;
  $("vPct").textContent = percent.toFixed(1) + "%";
  $("vHours").textContent = (learned / 60).toFixed(1) + " / " + minutes(totalSeconds);
@@ -756,7 +775,7 @@ function renderStatistics() {
  $("progressFill").style.width = percent + "%";
  $("progressBar").setAttribute("aria-valuenow", percent.toFixed(1));
  // 用未四舍五入的秒数判定，避免 99.95% 显示为 100.0% 时提前庆祝。
- completionFireworks.update(totalSeconds > 0 && learned === totalSeconds);
+ completionFireworks.update(totalSeconds > 0 && completedSeconds === totalSeconds);
 }
 
 // Forecast the exact selected prefix independently of manual records and list filters.
@@ -777,8 +796,7 @@ function renderPreviewStatistics() {
 // Missing dates are display-only placeholders, never added to saved records.
 // UTC day steps avoid skipped or duplicated dates around daylight-saving changes.
 function getDailyDisplay() {
- // Classify against all saved dates, before applying either display switch.
- // Recompute after edits/backfills so the earliest recorded date owns first study.
+ // 分类先于显示筛选，关闭复习或过滤空日期均不改变首次/复习归属。
  const seen = new Set();
  const saved = [...records].sort((a, b) => a.date.localeCompare(b.date)).map(record => {
   let firstSeconds = 0, reviewSeconds = 0, firstCount = 0, reviewCount = 0;
@@ -788,21 +806,23 @@ function getDailyDisplay() {
   }
   return { ...record, firstSeconds, reviewSeconds, firstCount, reviewCount };
  });
- if (!saved.length) return { days: [], gapCount: 0, limited: false };
+ if (!saved.length) return { days: [], recordDays: [], gapCount: 0, limited: false };
+ const studied = saved.filter(record => record.episodes.length > 0);
  const first = Date.parse(saved[0].date + "T00:00:00Z");
  const last = Date.parse(saved[saved.length - 1].date + "T00:00:00Z");
  const span = Math.round((last - first) / 86400000) + 1;
- const gapCount = span - saved.length;
- // Protect the offline page from accidental centuries-wide date ranges.
+ const gapCount = span - studied.length;
+ // 保留异常输入防护：日期误填成跨度很大的年份时，避免生成海量占位。
  const limited = !hideIdleDays && span > 3660;
- if (hideIdleDays || limited) return { days: saved, gapCount, limited };
+ // 仅跳过的日期无学习柱，但明细始终保留，便于修改或删除跳过标记。
+ if (hideIdleDays || limited) return { days: hideIdleDays ? studied : saved, recordDays: saved, gapCount, limited };
  const byDate = new Map(saved.map(record => [record.date, record]));
  const days = [];
  for (let time = first; time <= last; time += 86400000) {
   const date = new Date(time).toISOString().slice(0, 10);
-  days.push(byDate.get(date) || { date, episodes: [], unrecorded: true, firstSeconds: 0, reviewSeconds: 0, firstCount: 0, reviewCount: 0 });
+  days.push(byDate.get(date) || { date, episodes: [], skipped: [], unrecorded: true, firstSeconds: 0, reviewSeconds: 0, firstCount: 0, reviewCount: 0 });
  }
- return { days, gapCount, limited };
+ return { days, recordDays: days, gapCount, limited };
 }
 
 function updateDayFilterInfo(display) {
@@ -826,7 +846,8 @@ function renderDailyRecords(animateChart = false) {
  container.replaceChildren();
  const studyCount = records.reduce((sum, record) => sum + record.episodes.length, 0);
  const studySeconds = records.reduce((sum, record) => sum + sumSeconds(record.episodes), 0);
- $("dailySummary").textContent = "累计 " + records.length + " 天 · " + studyCount + " 集次 · " + minutes(studySeconds) + "（含复习）";
+ const studyDays = records.filter(record => record.episodes.length > 0).length;
+ $("dailySummary").textContent = "累计学习 " + studyDays + " 天 · " + studyCount + " 集次 · " + minutes(studySeconds) + "（含复习）";
  if (!records.length) {
   const empty = document.createElement("div");
   empty.className = "empty";
@@ -835,15 +856,19 @@ function renderDailyRecords(animateChart = false) {
   empty.append(title, document.createTextNode(recordsReadable ? "选择日期、填写分集后保存。" : "请检查浏览器存储设置。"));
   container.append(empty);
  }
- for (const record of [...display.days].reverse()) {
+ for (const record of [...display.recordDays].reverse()) {
   const row = document.createElement("article");
   row.className = "daily-record" + (record.unrecorded ? " unrecorded" : "");
   row.dataset.date = record.date;
   const date = document.createElement("time"); date.dateTime = record.date; date.textContent = record.date;
   const episodes = document.createElement("div"); episodes.className = "record-episodes";
   const caption = document.createElement("div"); caption.className = "record-caption"; caption.textContent = record.unrecorded ? "未记录" : "分集（P）";
-  episodes.append(caption, document.createTextNode(record.unrecorded ? "—" : formatEpisodes(record.episodes)));
+  episodes.append(caption, document.createTextNode(record.unrecorded ? "—" : formatRecord(record)));
   const count = document.createElement("div"); count.className = "record-count"; count.textContent = record.episodes.length + " 集";
+  if (record.skipped.length) {
+   const skipped = document.createElement("small"); skipped.className = "record-skipped"; skipped.textContent = "跳过 " + record.skipped.length;
+   count.append(skipped);
+  }
   const duration = document.createElement("div"); duration.className = "record-minutes"; duration.textContent = minutes(sumSeconds(record.episodes));
   const actions = document.createElement("div"); actions.className = "record-actions";
   const edit = document.createElement("button"); edit.type = "button"; edit.textContent = record.unrecorded ? "补记" : "修改"; edit.dataset.action = record.unrecorded ? "add" : "edit"; edit.setAttribute("aria-label", (record.unrecorded ? "补记 " : "修改 ") + record.date + " 的记录");
@@ -912,7 +937,7 @@ function renderDailyChart(animate = false, display = getDailyDisplay()) {
   chart.replaceChildren(empty);
  };
  let svg = chart.querySelector("svg");
- if (!records.length && !svg) {
+ if (!display.days.length && !svg) {
   showEmpty();
   chart.dataset.animating = "false";
   return;
@@ -1123,9 +1148,9 @@ function updatePreview() {
   return;
  }
  try {
-  const episodes = parseEpisodes($("recordEpisodes").value);
-  const unchanged = existing && episodes.length === existing.episodes.length && episodes.every((n, i) => n === existing.episodes[i]);
-  preview.textContent = (unchanged ? "已保存 " + existing.date + " · " : "待保存 · ") + episodes.length + " 集 · " + minutes(sumSeconds(episodes)) + (!unchanged && existing ? "（将覆盖当天记录）" : "");
+  const entry = parseEpisodes($("recordEpisodes").value);
+  const unchanged = existing && formatRecord(entry) === formatRecord(existing);
+  preview.textContent = (unchanged ? "已保存 " + existing.date + " · " : "待保存 · ") + "学习 " + entry.episodes.length + " 集 · " + minutes(sumSeconds(entry.episodes)) + (entry.skipped.length ? " · 跳过 " + entry.skipped.length + " 集" : "") + (!unchanged && existing ? "（将覆盖当天记录）" : "");
  } catch (error) {
   preview.className = "preview error";
   preview.textContent = error.message;
@@ -1141,7 +1166,7 @@ function clearForm() {
 function commitRecords(next, message) {
  if (!recordsReadable) return false;
  try {
-  localStorage.setItem(LOG_KEY, JSON.stringify({ version: 1, records: next }));
+  localStorage.setItem(LOG_KEY, JSON.stringify({ version: 2, records: next }));
  } catch (error) {
   showMessage("保存失败：浏览器存储不可用或已满。本次修改未保存，请保留输入后重试。", true);
   return false;
@@ -1250,12 +1275,12 @@ $("recordForm").addEventListener("submit", event => {
  event.preventDefault();
  const date = $("recordDate").value;
  if (!validDate(date)) { showMessage("请选择有效的学习日期。", true); $("recordDate").focus(); return; }
- let episodes;
- try { episodes = parseEpisodes($("recordEpisodes").value); }
+ let entry;
+ try { entry = parseEpisodes($("recordEpisodes").value); }
  catch (error) { showMessage(error.message, true); $("recordEpisodes").focus(); return; }
- const next = [...records.filter(record => record.date !== date), { date, episodes }].sort((a, b) => b.date.localeCompare(a.date));
+ const next = [...records.filter(record => record.date !== date), { date, ...entry }].sort((a, b) => b.date.localeCompare(a.date));
  if (commitRecords(next, "")) {
-  $("recordEpisodes").value = formatEpisodes(episodes);
+  $("recordEpisodes").value = formatRecord(entry);
   editingDate = date;
   updatePreview();
  }
@@ -1263,7 +1288,7 @@ $("recordForm").addEventListener("submit", event => {
 $("recordDate").addEventListener("change", () => {
  const existing = records.find(record => record.date === $("recordDate").value);
  if (existing) {
-  $("recordEpisodes").value = formatEpisodes(existing.episodes);
+  $("recordEpisodes").value = formatRecord(existing);
   editingDate = existing.date;
  } else if (editingDate) {
   $("recordEpisodes").value = "";
@@ -1298,7 +1323,7 @@ $("dailyRecords").addEventListener("click", event => {
  if (!record) return;
  if (button.dataset.action === "edit") {
   $("recordDate").value = date;
-  $("recordEpisodes").value = formatEpisodes(record.episodes);
+  $("recordEpisodes").value = formatRecord(record);
   editingDate = date;
   updatePreview();
   $("recordEpisodes").focus();
