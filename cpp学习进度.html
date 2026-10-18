@@ -698,7 +698,7 @@ function formatEpisodes(episodes) {
 }
 
 function formatRecord(record) {
- return [formatEpisodes(record.episodes), ...formatEpisodes(record.skipped || []).split(", ").filter(Boolean).map(range => "~" + range)].filter(Boolean).join(", ");
+ return [...formatEpisodes(record.skipped || []).split(", ").filter(Boolean).map(range => "~" + range), formatEpisodes(record.episodes)].filter(Boolean).join(", ");
 }
 
 function normalizeRecord(record) {

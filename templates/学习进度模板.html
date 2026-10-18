@@ -1852,7 +1852,7 @@ function formatEpisodes(episodes) {
 
 // 编辑、明细和备份使用同一份数据；~ 标记在保存及重载后保持可编辑。
 function formatRecord(record) {
- return [formatEpisodes(record.episodes), ...formatEpisodes(record.skipped || []).split(", ").filter(Boolean).map(range => "~" + range)].filter(Boolean).join(", ");
+ return [...formatEpisodes(record.skipped || []).split(", ").filter(Boolean).map(range => "~" + range), formatEpisodes(record.episodes)].filter(Boolean).join(", ");
 }
 
 // 本地读取与 JSON 导入共用校验；旧版缺少 skipped 时视为空，禁止损坏记录静默丢失。
