@@ -29,6 +29,15 @@
 - `templates/学习进度模板.html`：带源码注释的可复用模板。
 - `index.html`：在线访问入口。
 - `.nojekyll`：直接发布静态文件。
+- `skills/bilibili-study-html/`：可手动调用的 B 站教程学习页生成技能，包含解析脚本、模板快照和桌面快捷方式生成器。
+
+## 课程生成技能
+
+将 [skills/bilibili-study-html](skills/bilibili-study-html) 目录复制到本机 Codex 的 `skills` 目录后，可显式调用 `$bilibili-study-html`，提供 B 站课程链接和保存位置。技能保持仅手动调用。
+
+生成本地 HTML 时，默认创建带课程 Logo 的 Windows 桌面快捷方式。网页图标内嵌于 HTML；快捷方式使用同目录的同名 `.ico`，支持 C++、Python 等课程主题，其他主题由智能体按课程补充。使用 Node.js 18+、Windows PowerShell 和已安装的 Edge/Chrome，无需第三方 Node 依赖。桌面路径自动识别，同名快捷方式指向其他文件时另取名称。
+
+临时或仅线上构建可使用 `--no-shortcut`；调整 Logo 或移动成品后，可运行 `node scripts/bilibili_study.cjs desktop --html "<最终课程.html>"` 更新快捷方式。完整用法见 [技能说明](skills/bilibili-study-html/SKILL.md)。
 
 ## 复用模板
 

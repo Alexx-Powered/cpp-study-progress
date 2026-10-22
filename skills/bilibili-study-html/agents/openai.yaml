@@ -1,0 +1,6 @@
+interface:
+  display_name: "B站课程学习页"
+  short_description: "手动解析 B 站分 P 与时长，基于 GitHub 模板生成学习进度页面"
+  default_prompt: "使用 $bilibili-study-html 解析这个 B 站教程链接，并生成保存到我指定位置的学习进度 HTML。"
+policy:
+  allow_implicit_invocation: false
